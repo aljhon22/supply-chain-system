@@ -8,6 +8,7 @@ const Login = () => {
   // Primary Login State
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -19,7 +20,11 @@ const Login = () => {
   const [userId, setUserId] = useState('');
   const [totpCode, setTotpCode] = useState('');
 
-  const API_BASE_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth'; // Update to Render URL for cloud deployment
+  // Seamless Adaptive URL (Supports both Localhost and Live Cloud Deployment)
+  const API_BASE_URL =
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:5000/api/auth'
+      : 'https://supply-chain-system-pbir.onrender.com/api/auth';
 
   const handleInitialLogin = async (e) => {
     e.preventDefault();
@@ -91,22 +96,26 @@ const Login = () => {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#0f172a',
-      padding: '20px'
-    }}>
-      <div style={{
-        width: '100%',
-        maxWidth: '420px',
-        backgroundColor: '#ffffff',
-        borderRadius: '14px',
-        padding: '36px 30px',
-        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)'
-      }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#0f172a',
+        padding: '20px'
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '420px',
+          backgroundColor: '#ffffff',
+          borderRadius: '14px',
+          padding: '36px 30px',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)'
+        }}
+      >
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <h2 style={{ margin: '0 0 6px 0', fontSize: '1.6rem', fontWeight: 800, color: '#0f172a' }}>
             System Sign In
@@ -117,16 +126,18 @@ const Login = () => {
         </div>
 
         {errorMessage && !show2FAModal && (
-          <div style={{
-            backgroundColor: '#fef2f2',
-            color: '#dc2626',
-            padding: '12px 14px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: '600',
-            marginBottom: '20px',
-            border: '1px solid #fecaca'
-          }}>
+          <div
+            style={{
+              backgroundColor: '#fef2f2',
+              color: '#dc2626',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '600',
+              marginBottom: '20px',
+              border: '1px solid #fecaca'
+            }}
+          >
             {errorMessage}
           </div>
         )}
@@ -150,14 +161,49 @@ const Login = () => {
             <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
               Account Password
             </label>
-            <input
-              type="password"
-              className="form-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="form-input"
+                style={{ width: '100%', paddingRight: '44px' }}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                title={showPassword ? 'Hide password' : 'Show password'}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '4px',
+                  transition: 'color 0.2s ease'
+                }}
+              >
+                {showPassword ? (
+                  /* Eye-off / Slashed Eye Icon */
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  /* Eye Icon */
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
 
           <button
@@ -198,16 +244,18 @@ const Login = () => {
             </div>
 
             {errorMessage && (
-              <div style={{
-                backgroundColor: '#fef2f2',
-                color: '#dc2626',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                fontSize: '12.5px',
-                fontWeight: '600',
-                marginBottom: '16px',
-                border: '1px solid #fecaca'
-              }}>
+              <div
+                style={{
+                  backgroundColor: '#fef2f2',
+                  color: '#dc2626',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  fontWeight: '600',
+                  marginBottom: '16px',
+                  border: '1px solid #fecaca'
+                }}
+              >
                 {errorMessage}
               </div>
             )}
@@ -217,14 +265,16 @@ const Login = () => {
                 <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 14px 0' }}>
                   Scan this QR code using the <strong>Google Authenticator</strong> mobile application:
                 </p>
-                <div style={{
-                  padding: '12px',
-                  backgroundColor: '#f8fafc',
-                  borderRadius: '10px',
-                  display: 'inline-block',
-                  border: '1px solid #e2e8f0',
-                  marginBottom: '12px'
-                }}>
+                <div
+                  style={{
+                    padding: '12px',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '10px',
+                    display: 'inline-block',
+                    border: '1px solid #e2e8f0',
+                    marginBottom: '12px'
+                  }}
+                >
                   <img src={qrCodeImage} alt="2FA QR Code" style={{ width: '160px', height: '160px', display: 'block' }} />
                 </div>
                 <div style={{ fontSize: '11px', color: '#94a3b8' }}>
