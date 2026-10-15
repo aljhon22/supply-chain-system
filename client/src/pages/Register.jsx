@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import TermsModal from '../components/TermsModal';
 import '../Auth.css';
 
 const API_REGISTER_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth/register';
+const API_HEALTH_URL = 'https://supply-chain-system-pbir.onrender.com/api/health';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -26,6 +27,13 @@ const Register = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
+
+  // Pre-warm backend sa background habang nagpi-fill up pa lang ang user
+  useEffect(() => {
+    fetch(API_HEALTH_URL, { method: 'GET' })
+      .then(() => console.log('Backend pre-warmed for registration.'))
+      .catch(() => {});
+  }, []);
 
   const handleChange = (e) => {
     setFormData({
