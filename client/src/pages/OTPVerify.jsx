@@ -16,7 +16,7 @@ const OTPVerify = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(300); // 5-minute countdown
+  const [timeLeft, setTimeLeft] = useState(300);
 
   useEffect(() => {
     if (timeLeft <= 0) return;
@@ -44,7 +44,7 @@ const OTPVerify = () => {
 
     const cleanOtp = otp.trim();
     if (cleanOtp.length !== 6) {
-      setError('Pakilagay ang wastong 6-digit verification code.');
+      setError('Pakilagay ang 6-digit verification code.');
       return;
     }
 
@@ -64,10 +64,9 @@ const OTPVerify = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Mali ang nilagay na verification code.');
+        throw new Error(data.message || 'Mali ang verification code.');
       }
 
-      // I-save ang credentials at mag-navigate sa dashboard
       if (data.token) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('role', data.user?.role || 'Warehouse');
@@ -77,7 +76,7 @@ const OTPVerify = () => {
         navigate('/login');
       }
     } catch (err) {
-      setError(err.message || 'Verification attempt failed.');
+      setError(err.message || 'Verification failed. Pakisubukan muli.');
     } finally {
       setLoading(false);
     }
@@ -93,7 +92,7 @@ const OTPVerify = () => {
           </p>
         </div>
 
-        {/* Live Notification Card para sa Demo at Defense */}
+        {/* Live In-App Passcode Card para sa Defense */}
         {initialOtp && (
           <div
             style={{
@@ -106,7 +105,7 @@ const OTPVerify = () => {
             }}
           >
             <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#10b981', fontWeight: '700', marginBottom: '4px' }}>
-              ✓ Cloud Passcode Dispatched
+              ✓ Security Passcode Generated
             </div>
             <div style={{ fontSize: '26px', fontWeight: '800', letterSpacing: '8px', color: '#34d399', margin: '6px 0' }}>
               {initialOtp}
@@ -159,7 +158,7 @@ const OTPVerify = () => {
                 className="form-input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Ilagay ang rehistradong email"
+                placeholder="Enter registered email"
                 required
               />
             </div>

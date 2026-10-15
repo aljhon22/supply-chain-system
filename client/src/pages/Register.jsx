@@ -53,7 +53,7 @@ const Register = () => {
     }
 
     if (!agreedToTerms) {
-      setError('Paki-sang-ayunan muna ang Terms of Service bago magrehistro.');
+      setError('Paki-sang-ayunan muna ang Terms of Service.');
       return;
     }
 
@@ -83,7 +83,7 @@ const Register = () => {
         throw new Error(data.message || 'Hindi natuloy ang pagrehistro.');
       }
 
-      // Lilipat agad sa verification screen kasama ang nabuong OTP
+      // Lilipat agad sa verification view kasama ang generated OTP code
       navigate('/verify-otp', {
         state: {
           email: formData.email.trim(),
@@ -91,7 +91,7 @@ const Register = () => {
         }
       });
     } catch (err) {
-      setError(err.message || 'Network communication error. Pakisubukan muli.');
+      setError(err.message || 'Network error. Pakisubukan muli.');
     } finally {
       setLoading(false);
     }
@@ -277,16 +277,9 @@ const Register = () => {
             type="submit"
             className="btn-primary"
             disabled={loading || !agreedToTerms}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            style={{ width: '100%', height: '44px' }}
           >
-            {loading ? (
-              <>
-                <span className="spinner" style={{ width: '16px', height: '16px', border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }}></span>
-                Creating Account...
-              </>
-            ) : (
-              'Register Account'
-            )}
+            {loading ? 'Creating Account...' : 'Register Account'}
           </button>
         </form>
 

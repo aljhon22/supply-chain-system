@@ -6,19 +6,20 @@ const User = require('../models/User');
 const Otp = require('../models/Otp');
 const AuditLog = require('../models/AuditLog');
 
-// Gumawa ng secure 6-digit verification code
-const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
+// Gumawa ng 6-digit verification passcode
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
-// Audit helper
 const recordAudit = async (action, user, role, details, status = 'Success') => {
   try {
     await AuditLog.create({ action, user, role, details, status });
   } catch (err) {
-    console.warn('Audit error:', err.message);
+    console.warn('Audit log notice:', err.message);
   }
 };
 
-// POST: /api/auth/register (Instant execution, no SMTP timeout hanging)
+// POST: /api/auth/register (Instant <100ms response)
 router.post('/register', async (req, res) => {
   try {
     const { username, firstName, middleName, lastName, dob, email, contactNumber, address, role, password } = req.body;
@@ -30,13 +31,13 @@ router.post('/register', async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
     const normalizedUsername = username.trim();
 
-    // Linisin ang hindi pa verified na lumang records
+    // Linisin ang lumang unverified accounts na may kaparehong email o username
     await User.deleteMany({
       $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
       isVerified: { $ne: true }
     });
 
-    // Suriin kung may verified account na
+    // Suriin kung mayroon nang verified account
     const existingUser = await User.findOne({
       $or: [{ email: normalizedEmail }, { username: normalizedUsername }]
     });
@@ -44,26 +45,26 @@ router.post('/register', async (req, res) => {
     if (existingUser && existingUser.isVerified) {
       return res.status(400).json({
         message: existingUser.email === normalizedEmail
-          ? 'Ang email na ito ay may aktibo nang account. Mangyaring mag-sign in.'
+          ? 'Ang email na ito ay mayroon nang account. Mangyaring mag-sign in na lamang.'
           : 'Ang username na ito ay gamit na. Pumili ng ibang username.'
       });
     }
 
-    // Hash password & generate OTP
+    // I-hash ang password at buuin ang bagong OTP
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const generatedOtp = generateOTP();
+    const generatedCode = generateOTP();
 
     // I-save ang OTP sa database
     await Otp.deleteMany({ email: normalizedEmail });
     await Otp.create({
       email: normalizedEmail,
-      otp: generatedOtp,
-      code: generatedOtp,
+      otp: generatedCode,
+      code: generatedCode,
       createdAt: new Date()
     });
 
-    // I-save ang user bilang unverified
+    // I-save ang user bilang unverified muna
     const newUser = new User({
       username: normalizedUsername,
       firstName: firstName.trim(),
@@ -81,17 +82,17 @@ router.post('/register', async (req, res) => {
     await newUser.save();
     recordAudit('Account Registration Initiated', normalizedUsername, role || 'Warehouse', `OTP code generated for ${normalizedEmail}`);
 
-    console.log(`[AUTH SUCCESS] Bagong OTP para kay ${normalizedEmail}: ${generatedOtp}`);
+    console.log(`[AUTH SUCCESS] Bagong OTP para kay ${normalizedEmail}: ${generatedCode}`);
 
-    // Agad na sumagot sa frontend sa loob lamang ng ~100ms
+    // Agad na ibalik ang OTP sa client nang walang delay
     return res.status(201).json({
       success: true,
-      message: 'Account registered successfully. Verification required.',
+      message: 'Account registered. Verification required.',
       email: normalizedEmail,
-      otp: generatedOtp
+      otp: generatedCode
     });
   } catch (error) {
-    console.error('Registration Error:', error);
+    console.error('Registration processing error:', error);
     if (error.code === 11000) {
       return res.status(400).json({
         message: 'Mayroon nang account na gumagamit ng email o username na ito.'
@@ -113,7 +114,7 @@ const handleOtpVerification = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Suportado ang OTP record o ang master defense backup code na '888888'
+    // Tanggapin ang tamang OTP mula sa DB o ang master defense passcode na "888888"
     const isMasterBypass = inputOtp === '888888';
     const otpRecord = await Otp.findOne({
       email: normalizedEmail,
@@ -121,7 +122,7 @@ const handleOtpVerification = async (req, res) => {
     });
 
     if (!otpRecord && !isMasterBypass) {
-      recordAudit('OTP Verification Failed', normalizedEmail, 'Guest', 'Maling passcode', 'Warning');
+      recordAudit('OTP Verification Failed', normalizedEmail, 'Guest', 'Invalid passcode attempt', 'Warning');
       return res.status(400).json({ message: 'Mali o expired na ang verification code.' });
     }
 
@@ -143,7 +144,7 @@ const handleOtpVerification = async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    recordAudit('OTP Verification Success', user.username, user.role, 'User account activated');
+    recordAudit('OTP Verification Success', user.username, user.role, 'User account verified and activated');
 
     return res.status(200).json({
       message: 'Account verified successfully.',
@@ -200,7 +201,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Admin endpoints
+// Admin management routes
 router.get('/users', async (req, res) => {
   try {
     const users = await User.find({}, '-password').sort({ createdAt: -1 });
