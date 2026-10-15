@@ -18,6 +18,9 @@ const auditRoutes = require('./routes/auditRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Enable reverse proxy trust for Render and cloud load balancers
+app.set('trust proxy', 1);
+
 // ==========================================
 // 1. SECURITY & NETWORK CONFIGURATION
 // ==========================================
@@ -54,6 +57,7 @@ const generalLimiter = rateLimit({
   max: 300, // Maximum request quota per IP
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false }, // Resolves Render proxy validation conflict
   message: {
     status: 429,
     error: 'Too Many Requests',
@@ -66,6 +70,9 @@ app.use('/api/', generalLimiter);
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30, // Allows up to 30 authentication attempts per 15 mins
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false }, // Resolves Render proxy validation conflict
   message: {
     status: 429,
     error: 'Too Many Attempts',
