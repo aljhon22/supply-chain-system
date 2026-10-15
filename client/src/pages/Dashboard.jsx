@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import QrScannerModal from '../components/QrScannerModal';
 import { QRCodeSVG } from 'qrcode.react';
 import '../App.css';
 import customLogo from '../assets/scmw.jpg';
 
-// Default Furniture Inventory Dataset
+// 1. Permanent Default Furniture Dataset
 const DEFAULT_INVENTORY_DATA = [
   {
     _id: 'item-1',
@@ -65,7 +65,7 @@ const DEFAULT_INVENTORY_DATA = [
   }
 ];
 
-// Default System Audit Logs
+// 2. Default System Audit Logs
 const DEFAULT_AUDIT_LOGS = [
   { _id: 'aud-1', timestamp: '10/14/2026, 10:45:00 PM', action: 'Security Session Authorized', role: 'Admin', details: 'RBAC Security Matrix validated successfully' },
   { _id: 'aud-2', timestamp: '10/14/2026, 09:30:15 PM', action: 'Purchase Order Created', role: 'Procurement', details: 'Created PO for 1 units of Test table' },
@@ -113,7 +113,7 @@ const Dashboard = () => {
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All Categories');
   const [itemForm, setItemForm] = useState({ name: '', category: 'Chairs & Seating', quantity: '', price: '', supplier: '', aisle: 'Aisle A', rack: 'Rack 1' });
 
-  // Putaway Engine State
+  // Putaway State
   const [putawayCategory, setPutawayCategory] = useState('Chairs & Seating (Zone A)');
   const [recommendedBin, setRecommendedBin] = useState('');
 
@@ -127,13 +127,11 @@ const Dashboard = () => {
   const [supplierForm, setSupplierForm] = useState({ name: '', contactPerson: '', email: '', phone: '', address: '' });
 
   // Purchase Orders Dataset
-  const [ordersList, setOrdersList] = useState([
-    { id: 'PO-2026-001', date: '10/13/2026', itemName: 'Test table', supplier: 'Test', quantity: 1, totalPrice: 1000, status: 'Pending' }
-  ]);
+  const [ordersList, setOrdersList] = useState([{ id: 'PO-2026-001', date: '10/13/2026', itemName: 'Test table', supplier: 'Test', quantity: 1, totalPrice: 1000, status: 'Pending' }]);
   const [poForm, setPoForm] = useState({ selectedItemName: '', assignedSupplier: 'N/A', quantity: '', unitPrice: 0 });
   const MONTHLY_BUDGET = 150000;
 
-  // System Activity Audit Logs
+  // System Activity Audit Logs with LocalStorage Persistence
   const [auditLogs, setAuditLogs] = useState(() => {
     const cached = localStorage.getItem('cached_audit_logs');
     if (cached) {
@@ -171,6 +169,43 @@ const Dashboard = () => {
       return () => clearTimeout(timer);
     }
   }, [toast]);
+
+  // Handle Tab Navigation and Close Mobile Drawer
+  const handleTabClick = (tabKey) => {
+    setActiveTab(tabKey);
+    setIsMobileNavOpen(false);
+  };
+
+  // Sign Out Handler
+  const handleSignOut = useCallback(() => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    localStorage.removeItem('username');
+    navigate('/login');
+  }, [navigate]);
+
+  // Security: 15-Minute Inactivity Auto-Logout
+  useEffect(() => {
+    let idleTimer;
+
+    const resetTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      // 15 minutes of inactivity threshold (900,000 ms)
+      idleTimer = setTimeout(() => {
+        alert('Session expired due to 15 minutes of inactivity. For security compliance, please sign in again.');
+        handleSignOut();
+      }, 15 * 60 * 1000);
+    };
+
+    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    activityEvents.forEach((event) => window.addEventListener(event, resetTimer));
+    resetTimer();
+
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      activityEvents.forEach((event) => window.removeEventListener(event, resetTimer));
+    };
+  }, [handleSignOut]);
 
   // Esc Key Listener for Modals
   useEffect(() => {
@@ -215,6 +250,7 @@ const Dashboard = () => {
 
     setUserRole(storedRole);
     setUsername(storedName);
+    fetchBackendData();
   }, [navigate]);
 
   const roleStr = (userRole || '').toLowerCase();
@@ -229,16 +265,42 @@ const Dashboard = () => {
     }
   }, [userRole, activeTab, isAdmin, isWarehouse, isProcurement]);
 
-  const handleTabClick = (tabKey) => {
-    setActiveTab(tabKey);
-    setIsMobileNavOpen(false);
-  };
+  const fetchBackendData = async () => {
+    const token = localStorage.getItem('token');
+    const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
 
-  const handleSignOut = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    localStorage.removeItem('username');
-    navigate('/login');
+    // 1. Fetch Inventory Records
+    try {
+      const invRes = await fetch('http://localhost:5000/api/inventory', { headers: authHeaders });
+      if (invRes.ok) {
+        const invData = await invRes.json();
+        const resolvedInv = Array.isArray(invData) ? invData : (invData.inventory || invData.data || []);
+        if (resolvedInv.length > 0) {
+          setInventoryList(resolvedInv);
+          localStorage.setItem('cached_inventory', JSON.stringify(resolvedInv));
+        }
+      }
+    } catch {
+      console.warn('Backend offline: Inventory running on local cache.');
+    }
+
+    // 2. Fetch System Activity Audit Logs
+    try {
+      const logRes = await fetch('http://localhost:5000/api/audit', { headers: authHeaders });
+      if (logRes.ok) {
+        const logData = await logRes.json();
+        const resolvedLogs = Array.isArray(logData) 
+          ? logData 
+          : (logData.logs || logData.data || logData.auditLogs || []);
+
+        if (resolvedLogs.length > 0) {
+          setAuditLogs(resolvedLogs);
+          localStorage.setItem('cached_audit_logs', JSON.stringify(resolvedLogs));
+        }
+      }
+    } catch {
+      console.warn('Backend offline: Audit logs running on local cache.');
+    }
   };
 
   const getItemName = (item) => (item?.itemName || item?.name || 'Furniture Item');
@@ -270,8 +332,8 @@ const Dashboard = () => {
     localStorage.setItem('cached_audit_logs', JSON.stringify(nextLogs));
   };
 
-  // Inventory Stock Actions
-  const handleUpdateStockQty = (item) => {
+  // ================= DUAL-PERSISTENCE INVENTORY ACTIONS =================
+  const handleUpdateStockQty = async (item) => {
     const displayName = getItemName(item);
     const inputVal = prompt(`Enter new quantity for ${displayName}:`, item.quantity);
     if (inputVal === null || inputVal.trim() === '' || isNaN(inputVal)) return;
@@ -284,10 +346,24 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(updatedList));
 
     appendAuditLog('Inventory Updated', `Adjusted stock for ${displayName}: ${previousQty} -> ${parsedQty}`);
-    showToast(`Quantity updated to ${parsedQty}`, 'success');
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/inventory/${item._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: parsedQty })
+      });
+      if (response.ok) {
+        showToast(`Saved to Database: ${displayName} quantity is now ${parsedQty}!`, 'success');
+      } else {
+        showToast(`Saved locally: Quantity updated to ${parsedQty}`, 'success');
+      }
+    } catch {
+      showToast(`Saved locally (Offline Mode Active)`, 'success');
+    }
   };
 
-  const handleAddStockItem = (e) => {
+  const handleAddStockItem = async (e) => {
     e.preventDefault();
     if (!itemForm.name || !itemForm.quantity) return;
 
@@ -318,12 +394,30 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(nextList));
 
     appendAuditLog('Stock Item Added', `Added ${newItemPayload.itemName} (${newItemPayload.quantity} units) to Bin ${binLocation}`);
-    showToast(`Added ${newItemPayload.itemName}!`, 'success');
+
+    try {
+      const response = await fetch('http://localhost:5000/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newItemPayload)
+      });
+      if (response.ok) {
+        const savedData = await response.json();
+        const synchronized = nextList.map((i) => (i._id === tempId ? savedData : i));
+        setInventoryList(synchronized);
+        localStorage.setItem('cached_inventory', JSON.stringify(synchronized));
+        showToast(`Saved to Database: Added ${newItemPayload.itemName}!`, 'success');
+      } else {
+        showToast(`Saved locally: Added ${newItemPayload.itemName}!`, 'success');
+      }
+    } catch {
+      showToast(`Saved locally: Added ${newItemPayload.itemName}!`, 'success');
+    }
 
     setItemForm({ name: '', category: 'Chairs & Seating', quantity: '', price: '', supplier: '', aisle: 'Aisle A', rack: 'Rack 1' });
   };
 
-  const handleDeleteItem = (id, name) => {
+  const handleDeleteItem = async (id, name) => {
     if (!window.confirm(`Delete ${name} permanently?`)) return;
 
     const updated = inventoryList.filter((item) => item._id !== id);
@@ -331,7 +425,13 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(updated));
 
     appendAuditLog('Stock Item Deleted', `Permanently removed item: ${name}`);
-    showToast(`Deleted ${name} from inventory!`, 'info');
+
+    try {
+      await fetch(`http://localhost:5000/api/inventory/${id}`, { method: 'DELETE' });
+      showToast(`Deleted ${name} from Database!`, 'info');
+    } catch {
+      showToast(`Deleted ${name} locally!`, 'info');
+    }
   };
 
   const handleOpenDefect = (item) => {
@@ -353,6 +453,7 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(updated));
 
     appendAuditLog('Defect Flagged', `Flagged defect for ${itemName}: "${defectReason}"`);
+
     showToast(`Defect flagged for ${itemName}!`, 'warning');
     setIsDefectModalOpen(false);
   };
@@ -369,7 +470,7 @@ const Dashboard = () => {
     showToast('Inventory CSV Report downloaded!', 'success');
   };
 
-  const handleScanSuccess = (decodedText) => {
+  const handleScanSuccess = async (decodedText) => {
     playScanBeep();
     setIsScannerOpen(false);
     let parsedItemName = decodedText;
@@ -387,8 +488,15 @@ const Dashboard = () => {
         const updated = inventoryList.map((i) => (i._id === matchedItem._id ? { ...i, quantity: nextQty } : i));
         setInventoryList(updated);
         localStorage.setItem('cached_inventory', JSON.stringify(updated));
+
         appendAuditLog('Quick Stock Restocked', `Scan-incremented ${getItemName(matchedItem)} (+1 -> ${nextQty})`);
-        showToast(`Stock updated: +1 added to ${getItemName(matchedItem)}!`, 'success');
+
+        try {
+          await fetch(`http://localhost:5000/api/inventory/${matchedItem._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: nextQty }) });
+          showToast(`Stock saved: +1 added to ${getItemName(matchedItem)}!`, 'success');
+        } catch {
+          showToast(`Stock updated locally!`, 'success');
+        }
       }
     } else {
       setInventorySearch(decodedText);
@@ -473,7 +581,7 @@ const Dashboard = () => {
   const occupiedSlotsCount = 1;
   const warehouseOccupancyPct = Math.round((occupiedSlotsCount / TOTAL_WAREHOUSE_SLOTS) * 100);
 
-  // Theme Styling Palettes
+  // Modern Cohesive Theme Palette
   const themeStyles = {
     bgWorkspace: isDarkMode ? '#0b1120' : '#f8fafc',
     cardBg: isDarkMode ? '#131c2e' : '#ffffff',
@@ -501,12 +609,12 @@ const Dashboard = () => {
         type="button"
         className="mobile-toggle-btn"
         onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
-        aria-label="Toggle Navigation"
+        aria-label="Toggle Navigation Menu"
       >
         {isMobileNavOpen ? '✕' : '☰'}
       </button>
 
-      {/* Dimmed Overlay Backdrop for Mobile */}
+      {/* Dimmed Overlay Backdrop for Mobile Devices */}
       <div
         className={`mobile-overlay ${isMobileNavOpen ? 'active' : ''}`}
         onClick={() => setIsMobileNavOpen(false)}
@@ -521,8 +629,9 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Navigation Sidebar Drawer */}
+      {/* Sidebar Drawer */}
       <aside className={`sidebar ${isMobileNavOpen ? 'open' : ''}`}>
+        {/* Brand Logo Section */}
         <div
           className="sidebar-brand"
           style={{
@@ -533,6 +642,7 @@ const Dashboard = () => {
             marginBottom: '16px'
           }}
         >
+          {/* Circular Emblem Badge */}
           <div
             style={{
               width: '44px',
@@ -569,7 +679,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* User Profile Card */}
+        {/* Executive User Profile Card */}
         <div
           style={{
             display: 'flex',
@@ -612,7 +722,6 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
         <nav className="sidebar-nav">
           <button type="button" className={`sidebar-nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => handleTabClick('overview')}>Overview</button>
           {(isAdmin || isWarehouse) && <button type="button" className={`sidebar-nav-item ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => handleTabClick('inventory')}>Inventory Management</button>}
@@ -626,7 +735,7 @@ const Dashboard = () => {
           {isAdmin && <button type="button" className={`sidebar-nav-item ${activeTab === 'audit-logs' ? 'active' : ''}`} onClick={() => handleTabClick('audit-logs')}>System Audit Logs</button>}
         </nav>
 
-        {/* Light / Dark Mode Toggle */}
+        {/* Modern Segmented Dual Pill Switcher */}
         <div
           style={{
             marginTop: 'auto',
