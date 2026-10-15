@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../Auth.css';
 
+const API_LOGIN_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth/login';
+
 const Login = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -10,6 +12,7 @@ const Login = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
 
   const handleChange = (e) => {
     setFormData({
@@ -22,9 +25,15 @@ const Login = () => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    setStatusText('Connecting to cloud server...');
+
+    // Timer para magpaalala kapag gising pa lang ang libreng Render server
+    const wakeTimer = setTimeout(() => {
+      setStatusText('Waking up free cloud backend (may take ~30-50s)...');
+    }, 4500);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
+      const response = await fetch(API_LOGIN_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -32,27 +41,42 @@ const Login = () => {
         body: JSON.stringify(formData)
       });
 
-      const data = await response.json();
+      clearTimeout(wakeTimer);
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Invalid credentials.');
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error('Server returned an unreadable response. Please retry in a few seconds.');
       }
 
-      // Safely extract authentication token and user role
-      const resolvedToken = data.token;
+      if (!response.ok) {
+        throw new Error(data.message || 'Invalid username or password.');
+      }
+
+      // Kuhanin ang token at role
+      const resolvedToken = data.token || `auth-token-${Date.now()}`;
       const resolvedRole = data.user?.role || data.role || 'Admin';
       const resolvedUsername = data.user?.username || data.username || formData.username;
 
-      // Persist session values
+      // I-save sa session
       localStorage.setItem('token', resolvedToken);
       localStorage.setItem('role', resolvedRole);
       localStorage.setItem('username', resolvedUsername);
 
       navigate('/dashboard');
     } catch (err) {
-      setError(err.message || 'Login attempt failed.');
+      clearTimeout(wakeTimer);
+
+      // Maayos na mensahe kung sakaling tulog pa o offline
+      if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+        setError('Server is still waking up from idle mode. Please click "Sign In" again.');
+      } else {
+        setError(err.message || 'Login attempt failed.');
+      }
     } finally {
       setLoading(false);
+      setStatusText('');
     }
   };
 
@@ -65,6 +89,24 @@ const Login = () => {
         </div>
 
         {error && <div className="alert-message alert-error">{error}</div>}
+
+        {loading && statusText && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: '#60a5fa',
+              fontSize: '12px',
+              fontWeight: '600',
+              textAlign: 'center',
+              marginBottom: '16px'
+            }}
+          >
+            ⏳ {statusText}
+          </div>
+        )}
 
         <form onSubmit={handleLogin}>
           <div className="form-group" style={{ marginBottom: '16px' }}>
