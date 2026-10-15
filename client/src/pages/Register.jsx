@@ -28,9 +28,7 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch(API_HEALTH_URL, { method: 'GET' })
-      .then(() => console.log('Backend is awake and ready.'))
-      .catch(() => {});
+    fetch(API_HEALTH_URL, { method: 'GET' }).catch(() => {});
   }, []);
 
   const handleChange = (e) => {
@@ -45,17 +43,17 @@ const Register = () => {
     setError('');
 
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+      setError('Ang password ay dapat hindi bababa sa 6 na characters.');
       return;
     }
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Password confirmation does not match.');
+      setError('Hindi magkatugma ang password confirmation.');
       return;
     }
 
     if (!agreedToTerms) {
-      setError('You must read and agree to the Terms of Service.');
+      setError('Paki-sang-ayunan muna ang Terms of Service bago magrehistro.');
       return;
     }
 
@@ -64,9 +62,7 @@ const Register = () => {
     try {
       const response = await fetch(API_REGISTER_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: formData.username.trim(),
           firstName: formData.firstName.trim(),
@@ -84,10 +80,10 @@ const Register = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Registration failed.');
+        throw new Error(data.message || 'Hindi natuloy ang pagrehistro.');
       }
 
-      // I-forward ang email at ang nabuong OTP papuntang /verify-otp
+      // Lilipat agad sa verification screen kasama ang nabuong OTP
       navigate('/verify-otp', {
         state: {
           email: formData.email.trim(),
@@ -95,7 +91,7 @@ const Register = () => {
         }
       });
     } catch (err) {
-      setError(err.message || 'Server communication error.');
+      setError(err.message || 'Network communication error. Pakisubukan muli.');
     } finally {
       setLoading(false);
     }
@@ -121,7 +117,7 @@ const Register = () => {
                 className="form-input"
                 value={formData.username}
                 onChange={handleChange}
-                placeholder="Enter username"
+                placeholder="Pumili ng username"
                 required
               />
             </div>
@@ -134,7 +130,7 @@ const Register = () => {
                 className="form-input"
                 value={formData.email}
                 onChange={handleChange}
-                placeholder="email@example.com"
+                placeholder="example@gmail.com"
                 required
               />
             </div>
@@ -147,7 +143,7 @@ const Register = () => {
                 className="form-input"
                 value={formData.firstName}
                 onChange={handleChange}
-                placeholder="First name"
+                placeholder="Pangalan"
                 required
               />
             </div>
@@ -160,7 +156,7 @@ const Register = () => {
                 className="form-input"
                 value={formData.middleName}
                 onChange={handleChange}
-                placeholder="Middle name (optional)"
+                placeholder="Gitnang pangalan (opsyonal)"
               />
             </div>
 
@@ -172,7 +168,7 @@ const Register = () => {
                 className="form-input"
                 value={formData.lastName}
                 onChange={handleChange}
-                placeholder="Last name"
+                placeholder="Apelyido"
                 required
               />
             </div>
@@ -224,7 +220,7 @@ const Register = () => {
                 className="form-input"
                 value={formData.address}
                 onChange={handleChange}
-                placeholder="Location / Warehouse assignment"
+                placeholder="Hal. Central Warehouse, Quezon City"
                 required
               />
             </div>
@@ -281,8 +277,16 @@ const Register = () => {
             type="submit"
             className="btn-primary"
             disabled={loading || !agreedToTerms}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
           >
-            {loading ? 'Creating Account...' : 'Register'}
+            {loading ? (
+              <>
+                <span className="spinner" style={{ width: '16px', height: '16px', border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }}></span>
+                Creating Account...
+              </>
+            ) : (
+              'Register Account'
+            )}
           </button>
         </form>
 
