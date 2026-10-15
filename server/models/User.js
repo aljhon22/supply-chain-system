@@ -56,6 +56,15 @@ const userSchema = new mongoose.Schema(
     isVerified: {
       type: Boolean,
       default: false
+    },
+    // Google Authenticator (TOTP) Security Fields
+    twoFactorSecret: {
+      type: String,
+      default: null
+    },
+    isTwoFactorEnabled: {
+      type: Boolean,
+      default: false
     }
   },
   { timestamps: true }
