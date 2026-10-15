@@ -19,7 +19,7 @@ const Login = () => {
   const [userId, setUserId] = useState('');
   const [totpCode, setTotpCode] = useState('');
 
-  const API_BASE_URL = 'http://localhost:5000/api/auth'; // Update to Render URL for cloud deployment
+  const API_BASE_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth'; // Update to Render URL for cloud deployment
 
   const handleInitialLogin = async (e) => {
     e.preventDefault();
