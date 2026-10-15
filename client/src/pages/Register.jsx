@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import TermsModal from '../components/TermsModal';
 import '../Auth.css';
 
+const API_REGISTER_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth/register';
+
 const Register = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -23,6 +25,7 @@ const Register = () => {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
 
   const handleChange = (e) => {
     setFormData({
@@ -51,9 +54,14 @@ const Register = () => {
     }
 
     setLoading(true);
+    setStatusText('Creating account on cloud server...');
+
+    const wakeTimer = setTimeout(() => {
+      setStatusText('Connecting to cloud backend (may take ~30-50s if waking up)...');
+    }, 4500);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/register', {
+      const response = await fetch(API_REGISTER_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -72,17 +80,31 @@ const Register = () => {
         })
       });
 
-      const data = await response.json();
+      clearTimeout(wakeTimer);
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error('Server returned an unreadable response. Please try again.');
+      }
 
       if (!response.ok) {
         throw new Error(data.message || 'Registration failed.');
       }
 
+      // Diretso sa OTP verification matapos maipadala ang verification email
       navigate('/verify-otp', { state: { email: formData.email.trim() } });
     } catch (err) {
-      setError(err.message || 'Server communication error.');
+      clearTimeout(wakeTimer);
+      if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+        setError('Cloud server is still spinning up. Please click Register again.');
+      } else {
+        setError(err.message || 'Server communication error.');
+      }
     } finally {
       setLoading(false);
+      setStatusText('');
     }
   };
 
@@ -95,6 +117,24 @@ const Register = () => {
         </div>
 
         {error && <div className="alert-message alert-error">{error}</div>}
+
+        {loading && statusText && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: '#60a5fa',
+              fontSize: '12px',
+              fontWeight: '600',
+              textAlign: 'center',
+              marginBottom: '16px'
+            }}
+          >
+            ⏳ {statusText}
+          </div>
+        )}
 
         <form onSubmit={handleRegister}>
           <div className="form-grid">

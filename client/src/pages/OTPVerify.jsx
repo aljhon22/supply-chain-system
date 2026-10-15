@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import '../Auth.css';
 
+const API_VERIFY_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth/verify-otp';
+
 const OTPVerify = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -13,6 +15,7 @@ const OTPVerify = () => {
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
 
   const handleVerify = async (e) => {
     e.preventDefault();
@@ -25,9 +28,14 @@ const OTPVerify = () => {
     }
 
     setLoading(true);
+    setStatusText('Verifying code on cloud server...');
+
+    const wakeTimer = setTimeout(() => {
+      setStatusText('Connecting to cloud backend (may take ~30-50s if waking up)...');
+    }, 4500);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/verify-otp', {
+      const response = await fetch(API_VERIFY_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -39,7 +47,14 @@ const OTPVerify = () => {
         })
       });
 
-      const data = await response.json();
+      clearTimeout(wakeTimer);
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error('Server returned an unreadable response. Please try again.');
+      }
 
       if (!response.ok) {
         throw new Error(data.message || 'Verification failed. Please check the code.');
@@ -48,16 +63,22 @@ const OTPVerify = () => {
       // Store authenticated credentials
       if (data.token) {
         localStorage.setItem('token', data.token);
-        localStorage.setItem('role', data.user?.role || 'Warehouse');
-        localStorage.setItem('username', data.user?.username || 'Operator');
+        localStorage.setItem('role', data.user?.role || data.role || 'Warehouse');
+        localStorage.setItem('username', data.user?.username || data.username || 'Operator');
         navigate('/dashboard');
       } else {
         navigate('/login');
       }
     } catch (err) {
-      setError(err.message || 'Verification failed. Please try again.');
+      clearTimeout(wakeTimer);
+      if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+        setError('Cloud server is still spinning up. Please click Verify Code again.');
+      } else {
+        setError(err.message || 'Verification failed. Please try again.');
+      }
     } finally {
       setLoading(false);
+      setStatusText('');
     }
   };
 
@@ -72,6 +93,24 @@ const OTPVerify = () => {
         </div>
 
         {error && <div className="alert-message alert-error">{error}</div>}
+
+        {loading && statusText && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: '#60a5fa',
+              fontSize: '12px',
+              fontWeight: '600',
+              textAlign: 'center',
+              marginBottom: '16px'
+            }}
+          >
+            ⏳ {statusText}
+          </div>
+        )}
 
         <form onSubmit={handleVerify}>
           {!registeredEmail && (
