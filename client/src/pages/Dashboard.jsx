@@ -5,6 +5,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import '../App.css';
 import customLogo from '../assets/scmw.jpg';
 
+// Live Production Render Backend Gateway
+const API_BASE_URL = 'https://supply-chain-system-pbir.onrender.com';
+
 // 1. Permanent Default Furniture Dataset
 const DEFAULT_INVENTORY_DATA = [
   {
@@ -231,9 +234,9 @@ const Dashboard = () => {
     const token = localStorage.getItem('token');
     const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
 
-    // 1. Fetch Inventory Records
+    // 1. Fetch Inventory Records from Cloud Backend
     try {
-      const invRes = await fetch('http://localhost:5000/api/inventory', { headers: authHeaders });
+      const invRes = await fetch(`${API_BASE_URL}/api/inventory`, { headers: authHeaders });
       if (invRes.ok) {
         const invData = await invRes.json();
         const resolvedInv = Array.isArray(invData) ? invData : (invData.inventory || invData.data || []);
@@ -243,12 +246,12 @@ const Dashboard = () => {
         }
       }
     } catch {
-      console.warn('Backend offline: Inventory running on local cache.');
+      console.warn('Live API unreachable: Inventory running on offline local cache.');
     }
 
-    // 2. Fetch System Activity Audit Logs
+    // 2. Fetch System Activity Audit Logs from Cloud Backend
     try {
-      const logRes = await fetch('http://localhost:5000/api/audit', { headers: authHeaders });
+      const logRes = await fetch(`${API_BASE_URL}/api/audit`, { headers: authHeaders });
       if (logRes.ok) {
         const logData = await logRes.json();
         const resolvedLogs = Array.isArray(logData) 
@@ -261,7 +264,7 @@ const Dashboard = () => {
         }
       }
     } catch {
-      console.warn('Backend offline: Audit logs running on local cache.');
+      console.warn('Live API unreachable: Audit logs running on offline local cache.');
     }
   };
 
@@ -317,13 +320,13 @@ const Dashboard = () => {
     appendAuditLog('Inventory Updated', `Adjusted stock for ${displayName}: ${previousQty} -> ${parsedQty}`);
 
     try {
-      const response = await fetch(`http://localhost:5000/api/inventory/${item._id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/inventory/${item._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quantity: parsedQty })
       });
       if (response.ok) {
-        showToast(`Saved to Database: ${displayName} quantity is now ${parsedQty}!`, 'success');
+        showToast(`Saved to Cloud Database: ${displayName} quantity is now ${parsedQty}!`, 'success');
       } else {
         showToast(`Saved locally: Quantity updated to ${parsedQty}`, 'success');
       }
@@ -365,7 +368,7 @@ const Dashboard = () => {
     appendAuditLog('Stock Item Added', `Added ${newItemPayload.itemName} (${newItemPayload.quantity} units) to Bin ${binLocation}`);
 
     try {
-      const response = await fetch('http://localhost:5000/api/inventory', {
+      const response = await fetch(`${API_BASE_URL}/api/inventory`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItemPayload)
@@ -375,7 +378,7 @@ const Dashboard = () => {
         const synchronized = nextList.map((i) => (i._id === tempId ? savedData : i));
         setInventoryList(synchronized);
         localStorage.setItem('cached_inventory', JSON.stringify(synchronized));
-        showToast(`Saved to Database: Added ${newItemPayload.itemName}!`, 'success');
+        showToast(`Saved to Cloud Database: Added ${newItemPayload.itemName}!`, 'success');
       } else {
         showToast(`Saved locally: Added ${newItemPayload.itemName}!`, 'success');
       }
@@ -396,8 +399,8 @@ const Dashboard = () => {
     appendAuditLog('Stock Item Deleted', `Permanently removed item: ${name}`);
 
     try {
-      await fetch(`http://localhost:5000/api/inventory/${id}`, { method: 'DELETE' });
-      showToast(`Deleted ${name} from Database!`, 'info');
+      await fetch(`${API_BASE_URL}/api/inventory/${id}`, { method: 'DELETE' });
+      showToast(`Deleted ${name} from Cloud Database!`, 'info');
     } catch {
       showToast(`Deleted ${name} locally!`, 'info');
     }
@@ -461,7 +464,7 @@ const Dashboard = () => {
         appendAuditLog('Quick Stock Restocked', `Scan-incremented ${getItemName(matchedItem)} (+1 -> ${nextQty})`);
 
         try {
-          await fetch(`http://localhost:5000/api/inventory/${matchedItem._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: nextQty }) });
+          await fetch(`${API_BASE_URL}/api/inventory/${matchedItem._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: nextQty }) });
           showToast(`Stock saved: +1 added to ${getItemName(matchedItem)}!`, 'success');
         } catch {
           showToast(`Stock updated locally!`, 'success');
