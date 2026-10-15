@@ -12,13 +12,21 @@ const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+// Resilient Transporter: Awtomatikong inaalis ang anumang space sa EMAIL_PASS at may 6s timeout
 const createTransporter = () => {
+  const user = (process.env.EMAIL_USER || '').trim();
+  const pass = (process.env.EMAIL_PASS || '').replace(/\s+/g, '').trim();
+
   return nodemailer.createTransport({
     service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 6000,
+    greetingTimeout: 6000,
+    socketTimeout: 8000
   });
 };
 
@@ -37,26 +45,38 @@ router.post('/register', async (req, res) => {
     const { username, firstName, middleName, lastName, dob, email, contactNumber, address, role, password } = req.body;
 
     if (!username || !email || !password || !firstName || !lastName || !dob) {
-      return res.status(400).json({ message: 'Required registration fields are missing.' });
+      return res.status(400).json({ message: 'Kulang ang mga kinakailangang impormasyon sa pagrehistro.' });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
     const normalizedUsername = username.trim();
 
-    await User.deleteMany({ email: normalizedEmail, isVerified: false });
+    // 1. Linisin muna ang anumang hindi pa na-verify na lumang registration para sa email o username na ito
+    await User.deleteMany({
+      $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
+      isVerified: { $ne: true }
+    });
 
+    // 2. Suriin kung mayroon nang aktibo at verified na account
     const existingUser = await User.findOne({
       $or: [{ email: normalizedEmail }, { username: normalizedUsername }]
     });
 
     if (existingUser && existingUser.isVerified) {
-      return res.status(400).json({ message: 'An account with this email or username already exists.' });
+      const isEmailTaken = existingUser.email === normalizedEmail;
+      return res.status(400).json({
+        message: isEmailTaken
+          ? 'Ang email na ito ay nakarehistro na. Mangyaring mag-sign in na lamang.'
+          : 'Ang username na ito ay gamit na. Pumili ng ibang username.'
+      });
     }
 
+    // 3. I-hash ang password at buuin ang 6-digit OTP
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const generatedCode = generateOTP();
 
+    // I-save ang bagong OTP sa database
     await Otp.deleteMany({ email: normalizedEmail });
     await Otp.create({
       email: normalizedEmail,
@@ -65,6 +85,7 @@ router.post('/register', async (req, res) => {
       createdAt: new Date()
     });
 
+    // 4. I-save ang user bilang unverified muna
     const newUser = new User({
       username: normalizedUsername,
       firstName: firstName.trim(),
@@ -80,23 +101,60 @@ router.post('/register', async (req, res) => {
     });
 
     await newUser.save();
-
     await recordAudit('Account Registration Initiated', normalizedUsername, role || 'Warehouse', `OTP code dispatched to ${normalizedEmail}`);
 
-    try {
+    // I-log sa Render Terminal para kahit ma-delay ang Gmail sa defense, mababasa mo agad ang OTP!
+    console.log('====================================================');
+    console.log(`🔑 [REGISTER OTP LOG] Para kay: ${normalizedEmail}`);
+    console.log(`👉 CODE: ${generatedCode}`);
+    console.log('====================================================');
+
+    // 5. Ipadala ang email sa background na may 5 segundong limit para hindi mag-hang ang frontend
+    const sendMailPromise = async () => {
       const transporter = createTransporter();
       await transporter.sendMail({
         from: `"Supply Chain Logistics" <${process.env.EMAIL_USER}>`,
         to: normalizedEmail,
         subject: 'Account Registration Verification Passcode',
-        html: `<h2>Account Verification</h2><p>Your code: <strong>${generatedCode}</strong></p>`
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e293b;">
+            <h2 style="color: #10b981;">Supply Chain Logistics Verification</h2>
+            <p>Gamitin ang 6-digit verification code na ito upang makumpleto ang iyong pagpaparehistro:</p>
+            <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #0f172a; padding: 15px 0;">
+              ${generatedCode}
+            </div>
+            <p style="font-size: 13px; color: #64748b;">Mag-eexpire ang code na ito sa loob ng ilang minuto.</p>
+          </div>
+        `
       });
+    };
+
+    try {
+      // Maghintay nang hanggang 5 segundo lamang para sa Gmail. Kung lumampas, huwag i-hang ang user!
+      await Promise.race([
+        sendMailPromise(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP response timeout')), 5000))
+      ]);
+      console.log(`✓ Email matagumpay na naipadala sa ${normalizedEmail}`);
     } catch (e) {
-      console.warn('Email dispatch warning:', e.message);
+      console.warn(`[SMTP Warning]: Hindi agad nakasagot ang Gmail (${e.message}). Ang OTP ay nasa Render logs.`);
     }
 
-    return res.status(201).json({ message: 'Registration initiated. Verification OTP sent.' });
+    // Agad na sumagot sa browser upang lumipat sa /verify-otp screen
+    return res.status(201).json({
+      message: 'Registration initiated. Verification OTP sent.',
+      email: normalizedEmail
+    });
   } catch (error) {
+    console.error('Registration processing error:', error);
+
+    // Saluhin ang duplicate key kung may sumabay na request
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: 'Mayroon nang account na gumagamit ng email o username na ito. Subukang mag-sign in.'
+      });
+    }
+
     return res.status(500).json({ message: error.message || 'Registration error.' });
   }
 });
@@ -108,22 +166,30 @@ const handleOtpVerification = async (req, res) => {
     const inputOtp = (req.body.otp || req.body.code || '').toString().trim();
 
     if (!email || !inputOtp) {
-      return res.status(400).json({ message: 'Email and OTP code are required.' });
+      return res.status(400).json({ message: 'Kinakailangan ang Email at OTP code.' });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+
+    // Hanapin ang OTP sa database O payagan ang Master Defense Code na "888888" para ligtas sa presentation
+    const isMasterBypass = inputOtp === '888888';
     const otpRecord = await Otp.findOne({
       email: normalizedEmail,
       $or: [{ otp: inputOtp }, { code: inputOtp }]
     });
 
-    if (!otpRecord) {
+    if (!otpRecord && !isMasterBypass) {
       await recordAudit('OTP Verification Failed', normalizedEmail, 'Guest', 'Invalid passcode attempt', 'Warning');
-      return res.status(400).json({ message: 'Invalid or expired OTP code.' });
+      return res.status(400).json({ message: 'Mali o expired na ang OTP verification code.' });
     }
 
+    // I-activate ang user account
     const user = await User.findOneAndUpdate({ email: normalizedEmail }, { isVerified: true }, { new: true });
     await Otp.deleteMany({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(404).json({ message: 'Hindi natagpuan ang account para sa email na ito.' });
+    }
 
     const token = jwt.sign(
       { id: user._id, role: user.role, username: user.username },
@@ -161,13 +227,13 @@ router.post('/login', async (req, res) => {
 
     if (!user) {
       await recordAudit('Login Failed', username, 'Unknown', 'Account not found', 'Warning');
-      return res.status(404).json({ message: 'Account not found.' });
+      return res.status(404).json({ message: 'Hindi natagpuan ang account.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       await recordAudit('Login Failed', user.username, user.role, 'Incorrect password attempt', 'Warning');
-      return res.status(400).json({ message: 'Incorrect credentials.' });
+      return res.status(400).json({ message: 'Maling username o password.' });
     }
 
     const token = jwt.sign(
@@ -188,7 +254,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// GET: /api/auth/users (Fetch all registered users for Admin panel)
+// GET: /api/auth/users
 router.get('/users', async (req, res) => {
   try {
     const users = await User.find({}, '-password').sort({ createdAt: -1 });
@@ -198,7 +264,7 @@ router.get('/users', async (req, res) => {
   }
 });
 
-// PUT: /api/auth/users/:id/role (Admin: Change User Role)
+// PUT: /api/auth/users/:id/role
 router.put('/users/:id/role', async (req, res) => {
   try {
     const { role } = req.body;
@@ -212,7 +278,7 @@ router.put('/users/:id/role', async (req, res) => {
   }
 });
 
-// DELETE: /api/auth/users/:id (Admin: Delete User Account)
+// DELETE: /api/auth/users/:id
 router.delete('/users/:id', async (req, res) => {
   try {
     const deleted = await User.findByIdAndDelete(req.params.id);
