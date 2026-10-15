@@ -3,68 +3,75 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const Otp = require('../models/Otp');
 const AuditLog = require('../models/AuditLog');
 
-// Gumawa ng 6-digit verification passcode
-const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+// Department Security Passkeys
+const DEPARTMENT_PASSKEYS = {
+  Warehouse: 'WH-2026',
+  Procurement: 'PROC-2026',
+  Admin: 'ADMIN-2026'
 };
 
 const recordAudit = async (action, user, role, details, status = 'Success') => {
   try {
     await AuditLog.create({ action, user, role, details, status });
   } catch (err) {
-    console.warn('Audit log notice:', err.message);
+    console.warn('Audit recording notice:', err.message);
   }
 };
 
-// POST: /api/auth/register (Instant <100ms response)
+// POST: /api/auth/register (Instant Enterprise Registration with Passkey Validation)
 router.post('/register', async (req, res) => {
   try {
-    const { username, firstName, middleName, lastName, dob, email, contactNumber, address, role, password } = req.body;
+    const {
+      username,
+      firstName,
+      middleName,
+      lastName,
+      dob,
+      email,
+      contactNumber,
+      address,
+      role,
+      password,
+      securityPasskey
+    } = req.body;
 
     if (!username || !email || !password || !firstName || !lastName || !dob) {
-      return res.status(400).json({ message: 'Kulang ang mga kinakailangang impormasyon sa pagrehistro.' });
+      return res.status(400).json({ message: 'Kulang ang mga kinakailangang impormasyon.' });
+    }
+
+    const selectedRole = role || 'Warehouse';
+    const requiredPasskey = DEPARTMENT_PASSKEYS[selectedRole];
+
+    // Security Validation: Tiyaking tama ang department authorization key
+    if (!securityPasskey || securityPasskey.trim().toUpperCase() !== requiredPasskey) {
+      recordAudit('Unauthorized Registration Blocked', username.trim(), selectedRole, `Maling passkey para sa ${selectedRole}`, 'Warning');
+      return res.status(403).json({
+        message: `Maling Security Passkey para sa ${selectedRole}. Kinakailangan ang awtorisadong department key.`
+      });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
     const normalizedUsername = username.trim();
 
-    // Linisin ang lumang unverified accounts na may kaparehong email o username
-    await User.deleteMany({
-      $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
-      isVerified: { $ne: true }
-    });
-
-    // Suriin kung mayroon nang verified account
+    // Suriin kung mayroon nang gumagamit ng email o username
     const existingUser = await User.findOne({
       $or: [{ email: normalizedEmail }, { username: normalizedUsername }]
     });
 
-    if (existingUser && existingUser.isVerified) {
+    if (existingUser) {
       return res.status(400).json({
         message: existingUser.email === normalizedEmail
-          ? 'Ang email na ito ay mayroon nang account. Mangyaring mag-sign in na lamang.'
+          ? 'Ang email na ito ay nakarehistro na. Mangyaring mag-sign in.'
           : 'Ang username na ito ay gamit na. Pumili ng ibang username.'
       });
     }
 
-    // I-hash ang password at buuin ang bagong OTP
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const generatedCode = generateOTP();
 
-    // I-save ang OTP sa database
-    await Otp.deleteMany({ email: normalizedEmail });
-    await Otp.create({
-      email: normalizedEmail,
-      otp: generatedCode,
-      code: generatedCode,
-      createdAt: new Date()
-    });
-
-    // I-save ang user bilang unverified muna
+    // Agad na i-save bilang verified dahil awtorisado ng passkey
     const newUser = new User({
       username: normalizedUsername,
       firstName: firstName.trim(),
@@ -74,90 +81,27 @@ router.post('/register', async (req, res) => {
       email: normalizedEmail,
       contactNumber: (contactNumber || '').trim(),
       address: (address || '').trim(),
-      role: role || 'Warehouse',
+      role: selectedRole,
       password: hashedPassword,
-      isVerified: false
+      isVerified: true
     });
 
     await newUser.save();
-    recordAudit('Account Registration Initiated', normalizedUsername, role || 'Warehouse', `OTP code generated for ${normalizedEmail}`);
+    recordAudit('Account Registration Successful', normalizedUsername, selectedRole, `Awtorisadong account nilikha gamit ang department key`);
 
-    console.log(`[AUTH SUCCESS] Bagong OTP para kay ${normalizedEmail}: ${generatedCode}`);
-
-    // Agad na ibalik ang OTP sa client nang walang delay
+    // Instant response sa frontend (<200ms)
     return res.status(201).json({
       success: true,
-      message: 'Account registered. Verification required.',
-      email: normalizedEmail,
-      otp: generatedCode
+      message: 'Account successfully registered and authorized! You can now sign in.'
     });
   } catch (error) {
     console.error('Registration processing error:', error);
     if (error.code === 11000) {
-      return res.status(400).json({
-        message: 'Mayroon nang account na gumagamit ng email o username na ito.'
-      });
+      return res.status(400).json({ message: 'Mayroon nang account gamit ang email o username na ito.' });
     }
     return res.status(500).json({ message: error.message || 'Server error sa pagrehistro.' });
   }
 });
-
-// POST: /api/auth/verify-otp
-const handleOtpVerification = async (req, res) => {
-  try {
-    const email = req.body.email;
-    const inputOtp = (req.body.otp || req.body.code || '').toString().trim();
-
-    if (!email || !inputOtp) {
-      return res.status(400).json({ message: 'Kinakailangan ang Email at OTP code.' });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    // Tanggapin ang tamang OTP mula sa DB o ang master defense passcode na "888888"
-    const isMasterBypass = inputOtp === '888888';
-    const otpRecord = await Otp.findOne({
-      email: normalizedEmail,
-      $or: [{ otp: inputOtp }, { code: inputOtp }]
-    });
-
-    if (!otpRecord && !isMasterBypass) {
-      recordAudit('OTP Verification Failed', normalizedEmail, 'Guest', 'Invalid passcode attempt', 'Warning');
-      return res.status(400).json({ message: 'Mali o expired na ang verification code.' });
-    }
-
-    // I-activate ang account
-    const user = await User.findOneAndUpdate(
-      { email: normalizedEmail },
-      { isVerified: true },
-      { new: true }
-    );
-    await Otp.deleteMany({ email: normalizedEmail });
-
-    if (!user) {
-      return res.status(404).json({ message: 'Hindi natagpuan ang account.' });
-    }
-
-    const token = jwt.sign(
-      { id: user._id, role: user.role, username: user.username },
-      process.env.JWT_SECRET || 'supply_chain_default_secret_key',
-      { expiresIn: '1d' }
-    );
-
-    recordAudit('OTP Verification Success', user.username, user.role, 'User account verified and activated');
-
-    return res.status(200).json({
-      message: 'Account verified successfully.',
-      token,
-      user: { id: user._id, username: user.username, email: user.email, role: user.role }
-    });
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-};
-
-router.post('/verify-otp', handleOtpVerification);
-router.post('/verify', handleOtpVerification);
 
 // POST: /api/auth/login
 router.post('/login', async (req, res) => {
@@ -201,7 +145,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Admin management routes
+// Admin management endpoints
 router.get('/users', async (req, res) => {
   try {
     const users = await User.find({}, '-password').sort({ createdAt: -1 });

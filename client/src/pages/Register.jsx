@@ -6,6 +6,12 @@ import '../Auth.css';
 const API_REGISTER_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth/register';
 const API_HEALTH_URL = 'https://supply-chain-system-pbir.onrender.com/api/health';
 
+const PASSKEY_HINTS = {
+  Warehouse: 'WH-2026',
+  Procurement: 'PROC-2026',
+  Admin: 'ADMIN-2026'
+};
+
 const Register = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -18,6 +24,7 @@ const Register = () => {
     contactNumber: '',
     address: '',
     role: 'Warehouse',
+    securityPasskey: '',
     password: '',
     confirmPassword: ''
   });
@@ -73,6 +80,7 @@ const Register = () => {
           contactNumber: formData.contactNumber.trim(),
           address: formData.address.trim(),
           role: formData.role,
+          securityPasskey: formData.securityPasskey.trim(),
           password: formData.password
         })
       });
@@ -83,13 +91,8 @@ const Register = () => {
         throw new Error(data.message || 'Hindi natuloy ang pagrehistro.');
       }
 
-      // Lilipat agad sa verification view kasama ang generated OTP code
-      navigate('/verify-otp', {
-        state: {
-          email: formData.email.trim(),
-          otp: data.otp || ''
-        }
-      });
+      alert('✓ Tagumpay! Nalikha ang account. Maaari ka nang mag-sign in.');
+      navigate('/login');
     } catch (err) {
       setError(err.message || 'Network error. Pakisubukan muli.');
     } finally {
@@ -212,6 +215,25 @@ const Register = () => {
               </select>
             </div>
 
+            {/* Department Security Passkey Requirement */}
+            <div className="form-group full-width" style={{ backgroundColor: 'rgba(59, 130, 246, 0.08)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ margin: 0, color: '#93c5fd' }}>Department Authorization Passkey</label>
+                <span style={{ fontSize: '11px', color: '#60a5fa' }}>
+                  Default for {formData.role}: <strong>{PASSKEY_HINTS[formData.role]}</strong>
+                </span>
+              </div>
+              <input
+                type="text"
+                name="securityPasskey"
+                className="form-input"
+                value={formData.securityPasskey}
+                onChange={handleChange}
+                placeholder={`Ilagay ang passkey (Halimbawa: ${PASSKEY_HINTS[formData.role]})`}
+                required
+              />
+            </div>
+
             <div className="form-group full-width">
               <label>Address / Warehouse Assignment</label>
               <input
@@ -220,7 +242,7 @@ const Register = () => {
                 className="form-input"
                 value={formData.address}
                 onChange={handleChange}
-                placeholder="Hal. Central Warehouse, Quezon City"
+                placeholder="Halimbawa: Central Warehouse, Quezon City"
                 required
               />
             </div>
@@ -279,7 +301,7 @@ const Register = () => {
             disabled={loading || !agreedToTerms}
             style={{ width: '100%', height: '44px' }}
           >
-            {loading ? 'Creating Account...' : 'Register Account'}
+            {loading ? 'Authorizing & Creating Account...' : 'Register Account'}
           </button>
         </form>
 
