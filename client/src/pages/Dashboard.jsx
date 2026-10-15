@@ -5,10 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import '../App.css';
 import customLogo from '../assets/scmw.jpg';
 
-// Live Production Render Backend Gateway
-const API_BASE_URL = 'https://supply-chain-system-pbir.onrender.com';
-
-// 1. Permanent Default Furniture Dataset
+// Default Furniture Inventory Dataset
 const DEFAULT_INVENTORY_DATA = [
   {
     _id: 'item-1',
@@ -68,7 +65,7 @@ const DEFAULT_INVENTORY_DATA = [
   }
 ];
 
-// 2. Default System Audit Logs
+// Default System Audit Logs
 const DEFAULT_AUDIT_LOGS = [
   { _id: 'aud-1', timestamp: '10/14/2026, 10:45:00 PM', action: 'Security Session Authorized', role: 'Admin', details: 'RBAC Security Matrix validated successfully' },
   { _id: 'aud-2', timestamp: '10/14/2026, 09:30:15 PM', action: 'Purchase Order Created', role: 'Procurement', details: 'Created PO for 1 units of Test table' },
@@ -85,6 +82,7 @@ const DEFAULT_AUDIT_LOGS = [
 const Dashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [userRole, setUserRole] = useState('');
   const [username, setUsername] = useState('');
 
@@ -115,7 +113,7 @@ const Dashboard = () => {
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All Categories');
   const [itemForm, setItemForm] = useState({ name: '', category: 'Chairs & Seating', quantity: '', price: '', supplier: '', aisle: 'Aisle A', rack: 'Rack 1' });
 
-  // Putaway State
+  // Putaway Engine State
   const [putawayCategory, setPutawayCategory] = useState('Chairs & Seating (Zone A)');
   const [recommendedBin, setRecommendedBin] = useState('');
 
@@ -129,11 +127,13 @@ const Dashboard = () => {
   const [supplierForm, setSupplierForm] = useState({ name: '', contactPerson: '', email: '', phone: '', address: '' });
 
   // Purchase Orders Dataset
-  const [ordersList, setOrdersList] = useState([{ id: 'PO-2026-001', date: '10/13/2026', itemName: 'Test table', supplier: 'Test', quantity: 1, totalPrice: 1000, status: 'Pending' }]);
+  const [ordersList, setOrdersList] = useState([
+    { id: 'PO-2026-001', date: '10/13/2026', itemName: 'Test table', supplier: 'Test', quantity: 1, totalPrice: 1000, status: 'Pending' }
+  ]);
   const [poForm, setPoForm] = useState({ selectedItemName: '', assignedSupplier: 'N/A', quantity: '', unitPrice: 0 });
   const MONTHLY_BUDGET = 150000;
 
-  // System Activity Audit Logs with LocalStorage Persistence
+  // System Activity Audit Logs
   const [auditLogs, setAuditLogs] = useState(() => {
     const cached = localStorage.getItem('cached_audit_logs');
     if (cached) {
@@ -215,7 +215,6 @@ const Dashboard = () => {
 
     setUserRole(storedRole);
     setUsername(storedName);
-    fetchBackendData();
   }, [navigate]);
 
   const roleStr = (userRole || '').toLowerCase();
@@ -230,42 +229,9 @@ const Dashboard = () => {
     }
   }, [userRole, activeTab, isAdmin, isWarehouse, isProcurement]);
 
-  const fetchBackendData = async () => {
-    const token = localStorage.getItem('token');
-    const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
-
-    // 1. Fetch Inventory Records from Cloud Backend
-    try {
-      const invRes = await fetch(`${API_BASE_URL}/api/inventory`, { headers: authHeaders });
-      if (invRes.ok) {
-        const invData = await invRes.json();
-        const resolvedInv = Array.isArray(invData) ? invData : (invData.inventory || invData.data || []);
-        if (resolvedInv.length > 0) {
-          setInventoryList(resolvedInv);
-          localStorage.setItem('cached_inventory', JSON.stringify(resolvedInv));
-        }
-      }
-    } catch {
-      console.warn('Live API unreachable: Inventory running on offline local cache.');
-    }
-
-    // 2. Fetch System Activity Audit Logs from Cloud Backend
-    try {
-      const logRes = await fetch(`${API_BASE_URL}/api/audit`, { headers: authHeaders });
-      if (logRes.ok) {
-        const logData = await logRes.json();
-        const resolvedLogs = Array.isArray(logData) 
-          ? logData 
-          : (logData.logs || logData.data || logData.auditLogs || []);
-
-        if (resolvedLogs.length > 0) {
-          setAuditLogs(resolvedLogs);
-          localStorage.setItem('cached_audit_logs', JSON.stringify(resolvedLogs));
-        }
-      }
-    } catch {
-      console.warn('Live API unreachable: Audit logs running on offline local cache.');
-    }
+  const handleTabClick = (tabKey) => {
+    setActiveTab(tabKey);
+    setIsMobileNavOpen(false);
   };
 
   const handleSignOut = () => {
@@ -304,8 +270,8 @@ const Dashboard = () => {
     localStorage.setItem('cached_audit_logs', JSON.stringify(nextLogs));
   };
 
-  // ================= DUAL-PERSISTENCE INVENTORY ACTIONS =================
-  const handleUpdateStockQty = async (item) => {
+  // Inventory Stock Actions
+  const handleUpdateStockQty = (item) => {
     const displayName = getItemName(item);
     const inputVal = prompt(`Enter new quantity for ${displayName}:`, item.quantity);
     if (inputVal === null || inputVal.trim() === '' || isNaN(inputVal)) return;
@@ -318,24 +284,10 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(updatedList));
 
     appendAuditLog('Inventory Updated', `Adjusted stock for ${displayName}: ${previousQty} -> ${parsedQty}`);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/inventory/${item._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity: parsedQty })
-      });
-      if (response.ok) {
-        showToast(`Saved to Cloud Database: ${displayName} quantity is now ${parsedQty}!`, 'success');
-      } else {
-        showToast(`Saved locally: Quantity updated to ${parsedQty}`, 'success');
-      }
-    } catch {
-      showToast(`Saved locally (Offline Mode Active)`, 'success');
-    }
+    showToast(`Quantity updated to ${parsedQty}`, 'success');
   };
 
-  const handleAddStockItem = async (e) => {
+  const handleAddStockItem = (e) => {
     e.preventDefault();
     if (!itemForm.name || !itemForm.quantity) return;
 
@@ -366,30 +318,12 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(nextList));
 
     appendAuditLog('Stock Item Added', `Added ${newItemPayload.itemName} (${newItemPayload.quantity} units) to Bin ${binLocation}`);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/inventory`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newItemPayload)
-      });
-      if (response.ok) {
-        const savedData = await response.json();
-        const synchronized = nextList.map((i) => (i._id === tempId ? savedData : i));
-        setInventoryList(synchronized);
-        localStorage.setItem('cached_inventory', JSON.stringify(synchronized));
-        showToast(`Saved to Cloud Database: Added ${newItemPayload.itemName}!`, 'success');
-      } else {
-        showToast(`Saved locally: Added ${newItemPayload.itemName}!`, 'success');
-      }
-    } catch {
-      showToast(`Saved locally: Added ${newItemPayload.itemName}!`, 'success');
-    }
+    showToast(`Added ${newItemPayload.itemName}!`, 'success');
 
     setItemForm({ name: '', category: 'Chairs & Seating', quantity: '', price: '', supplier: '', aisle: 'Aisle A', rack: 'Rack 1' });
   };
 
-  const handleDeleteItem = async (id, name) => {
+  const handleDeleteItem = (id, name) => {
     if (!window.confirm(`Delete ${name} permanently?`)) return;
 
     const updated = inventoryList.filter((item) => item._id !== id);
@@ -397,13 +331,7 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(updated));
 
     appendAuditLog('Stock Item Deleted', `Permanently removed item: ${name}`);
-
-    try {
-      await fetch(`${API_BASE_URL}/api/inventory/${id}`, { method: 'DELETE' });
-      showToast(`Deleted ${name} from Cloud Database!`, 'info');
-    } catch {
-      showToast(`Deleted ${name} locally!`, 'info');
-    }
+    showToast(`Deleted ${name} from inventory!`, 'info');
   };
 
   const handleOpenDefect = (item) => {
@@ -425,7 +353,6 @@ const Dashboard = () => {
     localStorage.setItem('cached_inventory', JSON.stringify(updated));
 
     appendAuditLog('Defect Flagged', `Flagged defect for ${itemName}: "${defectReason}"`);
-
     showToast(`Defect flagged for ${itemName}!`, 'warning');
     setIsDefectModalOpen(false);
   };
@@ -442,7 +369,7 @@ const Dashboard = () => {
     showToast('Inventory CSV Report downloaded!', 'success');
   };
 
-  const handleScanSuccess = async (decodedText) => {
+  const handleScanSuccess = (decodedText) => {
     playScanBeep();
     setIsScannerOpen(false);
     let parsedItemName = decodedText;
@@ -460,15 +387,8 @@ const Dashboard = () => {
         const updated = inventoryList.map((i) => (i._id === matchedItem._id ? { ...i, quantity: nextQty } : i));
         setInventoryList(updated);
         localStorage.setItem('cached_inventory', JSON.stringify(updated));
-
         appendAuditLog('Quick Stock Restocked', `Scan-incremented ${getItemName(matchedItem)} (+1 -> ${nextQty})`);
-
-        try {
-          await fetch(`${API_BASE_URL}/api/inventory/${matchedItem._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: nextQty }) });
-          showToast(`Stock saved: +1 added to ${getItemName(matchedItem)}!`, 'success');
-        } catch {
-          showToast(`Stock updated locally!`, 'success');
-        }
+        showToast(`Stock updated: +1 added to ${getItemName(matchedItem)}!`, 'success');
       }
     } else {
       setInventorySearch(decodedText);
@@ -553,7 +473,7 @@ const Dashboard = () => {
   const occupiedSlotsCount = 1;
   const warehouseOccupancyPct = Math.round((occupiedSlotsCount / TOTAL_WAREHOUSE_SLOTS) * 100);
 
-  // Modern Cohesive Theme Palette
+  // Theme Styling Palettes
   const themeStyles = {
     bgWorkspace: isDarkMode ? '#0b1120' : '#f8fafc',
     cardBg: isDarkMode ? '#131c2e' : '#ffffff',
@@ -576,6 +496,22 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard-container" style={{ backgroundColor: themeStyles.bgWorkspace, minHeight: '100vh', transition: 'background-color 0.3s ease' }}>
+      {/* Floating Hamburger Toggle Button for Cellphones & Tablets */}
+      <button
+        type="button"
+        className="mobile-toggle-btn"
+        onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+        aria-label="Toggle Navigation"
+      >
+        {isMobileNavOpen ? '✕' : '☰'}
+      </button>
+
+      {/* Dimmed Overlay Backdrop for Mobile */}
+      <div
+        className={`mobile-overlay ${isMobileNavOpen ? 'active' : ''}`}
+        onClick={() => setIsMobileNavOpen(false)}
+      />
+
       {/* Toast Notification */}
       {toast && (
         <div style={{ position: 'fixed', top: '24px', right: '28px', zIndex: 99999, display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 20px', borderRadius: '10px', backgroundColor: '#0f172a', color: '#ffffff', boxShadow: '0 10px 30px rgba(0,0,0,0.35)', borderLeft: `5px solid ${toast.type === 'success' ? '#10b981' : toast.type === 'warning' ? '#f59e0b' : '#3b82f6'}`, fontSize: '13px', fontWeight: '600' }}>
@@ -585,9 +521,8 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Sidebar with Circular Emblem Logo & Profile Card */}
-      <aside className="sidebar">
-        {/* Brand Logo Section - Swak at Pantay na Alignment */}
+      {/* Navigation Sidebar Drawer */}
+      <aside className={`sidebar ${isMobileNavOpen ? 'open' : ''}`}>
         <div
           className="sidebar-brand"
           style={{
@@ -598,7 +533,6 @@ const Dashboard = () => {
             marginBottom: '16px'
           }}
         >
-          {/* Circular Emblem Badge */}
           <div
             style={{
               width: '44px',
@@ -635,7 +569,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Executive User Profile Card */}
+        {/* User Profile Card */}
         <div
           style={{
             display: 'flex',
@@ -678,20 +612,21 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Navigation Tabs */}
         <nav className="sidebar-nav">
-          <button type="button" className={`sidebar-nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
-          {(isAdmin || isWarehouse) && <button type="button" className={`sidebar-nav-item ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>Inventory Management</button>}
-          {(isAdmin || isWarehouse) && <button type="button" className={`sidebar-nav-item ${activeTab === 'warehouse-map' ? 'active' : ''}`} onClick={() => setActiveTab('warehouse-map')}>2D Warehouse Floor Map</button>}
-          {(isAdmin || isProcurement) && <button type="button" className={`sidebar-nav-item ${activeTab === 'suppliers' ? 'active' : ''}`} onClick={() => setActiveTab('suppliers')}>Supplier Management</button>}
-          {(isAdmin || isProcurement) && <button type="button" className={`sidebar-nav-item ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>Purchase Orders</button>}
-          <button type="button" className={`sidebar-nav-item ${activeTab === 'alerts' ? 'active' : ''}`} onClick={() => setActiveTab('alerts')}>
+          <button type="button" className={`sidebar-nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => handleTabClick('overview')}>Overview</button>
+          {(isAdmin || isWarehouse) && <button type="button" className={`sidebar-nav-item ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => handleTabClick('inventory')}>Inventory Management</button>}
+          {(isAdmin || isWarehouse) && <button type="button" className={`sidebar-nav-item ${activeTab === 'warehouse-map' ? 'active' : ''}`} onClick={() => handleTabClick('warehouse-map')}>2D Warehouse Floor Map</button>}
+          {(isAdmin || isProcurement) && <button type="button" className={`sidebar-nav-item ${activeTab === 'suppliers' ? 'active' : ''}`} onClick={() => handleTabClick('suppliers')}>Supplier Management</button>}
+          {(isAdmin || isProcurement) && <button type="button" className={`sidebar-nav-item ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => handleTabClick('orders')}>Purchase Orders</button>}
+          <button type="button" className={`sidebar-nav-item ${activeTab === 'alerts' ? 'active' : ''}`} onClick={() => handleTabClick('alerts')}>
             <span>Alerts Center</span>
             {lowStockItems.length > 0 && <span style={{ backgroundColor: '#ef4444', color: '#ffffff', fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '10px' }}>{lowStockItems.length}</span>}
           </button>
-          {isAdmin && <button type="button" className={`sidebar-nav-item ${activeTab === 'audit-logs' ? 'active' : ''}`} onClick={() => setActiveTab('audit-logs')}>System Audit Logs</button>}
+          {isAdmin && <button type="button" className={`sidebar-nav-item ${activeTab === 'audit-logs' ? 'active' : ''}`} onClick={() => handleTabClick('audit-logs')}>System Audit Logs</button>}
         </nav>
 
-        {/* Modern Segmented Dual Pill Switcher */}
+        {/* Light / Dark Mode Toggle */}
         <div
           style={{
             marginTop: 'auto',
@@ -774,7 +709,7 @@ const Dashboard = () => {
                   <div style={{ color: '#991b1b', fontWeight: '700', fontSize: '15px' }}>⚠️ System Alerts Detected!</div>
                   <div style={{ color: '#b91c1c', fontSize: '13px', marginTop: '4px' }}>{lowStockItems.length} items low on stock | {defectiveLogs.length} items flagged with defect records.</div>
                 </div>
-                <button type="button" className="alert-btn" onClick={() => setActiveTab('alerts')}>View Alert Center</button>
+                <button type="button" className="alert-btn" onClick={() => handleTabClick('alerts')}>View Alert Center</button>
               </div>
             )}
 
@@ -798,7 +733,7 @@ const Dashboard = () => {
             </section>
 
             <div style={{ backgroundColor: themeStyles.cardBg, borderRadius: '12px', padding: '24px', border: `1px solid ${themeStyles.cardBorder}`, boxShadow: themeStyles.cardShadow }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '8px' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: themeStyles.textPrimary }}>📈 Inventory Valuation & Stock Distribution by Category</h3>
                   <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: themeStyles.textSecondary }}>Proportional asset share across warehouse storage zones.</p>
@@ -829,7 +764,7 @@ const Dashboard = () => {
         {/* ================= TAB 2: INVENTORY CATALOG ================= */}
         {activeTab === 'inventory' && (isAdmin || isWarehouse) && (
           <div>
-            <header className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <header className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
               <h1 style={{ fontSize: '26px', fontWeight: '800', color: themeStyles.textPrimary, margin: 0 }}>Furniture Inventory Catalog</h1>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button type="button" onClick={() => setIsScannerOpen(true)} style={{ backgroundColor: '#4f46e5', color: '#ffffff', border: 'none', padding: '9px 18px', borderRadius: '7px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -844,7 +779,7 @@ const Dashboard = () => {
             <div style={{ backgroundColor: themeStyles.cardBg, borderRadius: '10px', padding: '22px 24px', border: `1px solid ${themeStyles.cardBorder}`, marginBottom: '32px', boxShadow: themeStyles.cardShadow }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: '800', color: themeStyles.textPrimary }}>Add Furniture Item with Storage Bin</h3>
               <form onSubmit={handleAddStockItem}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                   <input type="text" placeholder="Item Name *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={itemForm.name} onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })} required />
                   <select className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={itemForm.category} onChange={(e) => setItemForm({ ...itemForm, category: e.target.value })}>
                     <option value="Chairs & Seating">Chairs & Seating</option>
@@ -855,7 +790,7 @@ const Dashboard = () => {
                   <input type="number" placeholder="Quantity Stock *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={itemForm.quantity} onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value })} required />
                   <input type="number" placeholder="Unit Price (₱) *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={itemForm.price} onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })} required />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '18px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '18px' }}>
                   <select className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={itemForm.supplier} onChange={(e) => setItemForm({ ...itemForm, supplier: e.target.value })}>
                     <option value="">-- Select Supplier * --</option>
                     {suppliersList.map((sup) => (<option key={sup.id || sup._id} value={sup.name}>{sup.name}</option>))}
@@ -878,7 +813,7 @@ const Dashboard = () => {
             </div>
 
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
                 <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: themeStyles.textPrimary }}>Current Stock Catalog</h3>
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <input type="text" placeholder="Search item..." value={inventorySearch} onChange={(e) => setInventorySearch(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${themeStyles.cardBorder}`, fontSize: '13px', outline: 'none', backgroundColor: themeStyles.inputBg, color: themeStyles.textPrimary }} />
@@ -985,7 +920,7 @@ const Dashboard = () => {
                 <span>🎯</span> Directed Putaway Recommendation Engine
               </div>
               <p style={{ margin: '6px 0 14px 0', fontSize: '13px', color: themeStyles.textSecondary }}>Select an incoming product category to query MongoDB for the optimal, nearest empty storage bin:</p>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <select value={putawayCategory} onChange={(e) => setPutawayCategory(e.target.value)} style={{ padding: '9px 14px', borderRadius: '7px', border: `1px solid ${themeStyles.cardBorder}`, fontSize: '13px', backgroundColor: themeStyles.inputBg, color: themeStyles.textPrimary, minWidth: '240px' }}>
                   <option value="Chairs & Seating (Zone A)">Chairs & Seating (Zone A)</option>
                   <option value="Tables & Desks (Zone B)">Tables & Desks (Zone B)</option>
@@ -998,16 +933,16 @@ const Dashboard = () => {
             </div>
 
             <div style={{ backgroundColor: themeStyles.cardBg, borderRadius: '10px', padding: '24px', border: `1px solid ${themeStyles.cardBorder}`, boxShadow: themeStyles.cardShadow }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px', flexWrap: 'wrap', gap: '10px' }}>
                 <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: themeStyles.textPrimary }}>Warehouse 2D Storage Rack Layout</h3>
-                <div style={{ display: 'flex', gap: '18px', fontSize: '12px', color: themeStyles.textSecondary }}>
+                <div style={{ display: 'flex', gap: '18px', fontSize: '12px', color: themeStyles.textSecondary, flexWrap: 'wrap' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', backgroundColor: '#10b981', borderRadius: '2px' }} /> Occupied Bin</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', backgroundColor: isDarkMode ? '#0b1322' : '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '2px' }} /> Empty Bin</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', backgroundColor: '#fbbf24', borderRadius: '2px' }} /> Recommended Putaway Target</span>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
                 {[
                   { code: 'A', title: 'Aisle A (Chairs)' },
                   { code: 'B', title: 'Aisle B (Tables)' },
@@ -1047,12 +982,12 @@ const Dashboard = () => {
             <div style={{ backgroundColor: themeStyles.cardBg, borderRadius: '10px', padding: '22px 24px', border: `1px solid ${themeStyles.cardBorder}`, marginBottom: '32px', boxShadow: themeStyles.cardShadow }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: '800', color: themeStyles.textPrimary }}>Add New Supplier</h3>
               <form onSubmit={handleSaveSupplier}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                   <input type="text" placeholder="Company Name *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} required />
                   <input type="text" placeholder="Contact Person *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={supplierForm.contactPerson} onChange={(e) => setSupplierForm({ ...supplierForm, contactPerson: e.target.value })} required />
                   <input type="email" placeholder="Email Address *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={supplierForm.email} onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })} required />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '18px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '18px' }}>
                   <input type="tel" placeholder="Contact Number *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} required />
                   <input type="text" placeholder="Business Address *" className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} required />
                 </div>
@@ -1120,7 +1055,7 @@ const Dashboard = () => {
             <div style={{ backgroundColor: themeStyles.cardBg, borderRadius: '10px', padding: '22px 24px', border: `1px solid ${themeStyles.cardBorder}`, marginBottom: '32px', boxShadow: themeStyles.cardShadow }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: '800', color: themeStyles.textPrimary }}>Create Purchase Order (Reorder)</h3>
               <form onSubmit={handleSubmitPurchaseOrder}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                   <select className="form-input" style={{ backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder, color: themeStyles.textPrimary }} value={poForm.selectedItemName} onChange={(e) => handlePoItemSelect(e.target.value)} required>
                     <option value="">-- Select Item to Restock * --</option>
                     {inventoryList.map((item, idx) => (
@@ -1188,7 +1123,7 @@ const Dashboard = () => {
               <h1 style={{ fontSize: '26px', fontWeight: '800', color: themeStyles.textPrimary, margin: 0 }}>Automated Warning & Alert Center</h1>
             </header>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: themeStyles.cardBg, borderLeft: '5px solid #f97316', border: `1px solid ${themeStyles.cardBorder}`, borderRadius: '10px', padding: '20px 24px', marginBottom: '32px', boxShadow: themeStyles.cardShadow }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: themeStyles.cardBg, borderLeft: '5px solid #f97316', border: `1px solid ${themeStyles.cardBorder}`, borderRadius: '10px', padding: '20px 24px', marginBottom: '32px', boxShadow: themeStyles.cardShadow, flexWrap: 'wrap', gap: '14px' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: '800', color: themeStyles.textPrimary }}>
                   <span>⚡</span> Automated Purchase Order Generator
@@ -1276,7 +1211,7 @@ const Dashboard = () => {
         {/* ================= TAB 7: SYSTEM AUDIT LOGS ================= */}
         {activeTab === 'audit-logs' && isAdmin && (
           <div>
-            <header className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <header className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h1 style={{ fontSize: '26px', fontWeight: '800', color: themeStyles.textPrimary, margin: 0 }}>System Activity Audit Logs</h1>
                 <p style={{ color: themeStyles.textSecondary, fontSize: '13px', margin: '4px 0 0 0' }}>Immutable security records of ledger events and role access.</p>
@@ -1319,7 +1254,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Modals */}
+        {/* Modal: PO Print Document */}
         {isPoPrintModalOpen && selectedPoForPrint && (
           <div className="modal-backdrop" onClick={() => setIsPoPrintModalOpen(false)} style={{ overflowY: 'auto', padding: '20px' }}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '660px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', color: '#0f172a', overflow: 'hidden' }}>
@@ -1375,6 +1310,7 @@ const Dashboard = () => {
           </div>
         )}
 
+        {/* Modal: Audit Compliance Print Report */}
         {isAuditPrintModalOpen && (
           <div className="modal-backdrop" onClick={() => setIsAuditPrintModalOpen(false)} style={{ overflowY: 'auto', padding: '20px' }}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '780px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', color: '#0f172a', overflow: 'hidden' }}>
@@ -1420,6 +1356,7 @@ const Dashboard = () => {
           </div>
         )}
 
+        {/* Modal: QR Code Digital Asset Tag */}
         {isQrModalOpen && selectedQrItem && (
           <div className="modal-backdrop" onClick={() => setIsQrModalOpen(false)}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '380px', textAlign: 'center' }}>
@@ -1443,6 +1380,7 @@ const Dashboard = () => {
           </div>
         )}
 
+        {/* Modal: Defect Report */}
         {isDefectModalOpen && selectedDefectItem && (
           <div className="modal-backdrop" onClick={() => setIsDefectModalOpen(false)} style={{ overflowY: 'auto', padding: '20px' }}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '460px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -1453,12 +1391,12 @@ const Dashboard = () => {
               <form onSubmit={handleSubmitDefect}>
                 <div className="modal-body">
                   <p style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#334155' }}>Item: <strong>{getItemName(selectedDefectItem)}</strong> (Bin: {getBinLocation(selectedDefectItem)})</p>
-                  <div className="form-group" style={{ marginBottom: '14px' }}>
-                    <label>Defect Description / Reason *</label>
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600' }}>Defect Description / Reason *</label>
                     <textarea rows="3" className="form-input" placeholder="e.g. Broken caster, scratched finish..." value={defectReason} onChange={(e) => setDefectReason(e.target.value)} required style={{ resize: 'none' }} />
                   </div>
-                  <div className="form-group">
-                    <label>Attach Damage Photo Proof (Optional)</label>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600' }}>Attach Damage Photo Proof (Optional)</label>
                     <input type="file" accept="image/*" className="form-input" onChange={(e) => {
                       const file = e.target.files && e.target.files[0];
                       if (file) {
