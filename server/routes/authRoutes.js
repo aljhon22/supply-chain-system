@@ -7,30 +7,11 @@ const User = require('../models/User');
 const Otp = require('../models/Otp');
 const AuditLog = require('../models/AuditLog');
 
-// Generate 6-digit verification code
+// Gumawa ng 6-digit verification code
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// Resilient Transporter: Awtomatikong inaalis ang anumang space sa EMAIL_PASS at may 6s timeout
-const createTransporter = () => {
-  const user = (process.env.EMAIL_USER || '').trim();
-  const pass = (process.env.EMAIL_PASS || '').replace(/\s+/g, '').trim();
-
-  return nodemailer.createTransport({
-    service: 'gmail',
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 6000,
-    greetingTimeout: 6000,
-    socketTimeout: 8000
-  });
-};
-
-// Helper to record an audit trail event directly to DB
 const recordAudit = async (action, user, role, details, status = 'Success') => {
   try {
     await AuditLog.create({ action, user, role, details, status });
@@ -51,32 +32,30 @@ router.post('/register', async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
     const normalizedUsername = username.trim();
 
-    // 1. Linisin muna ang anumang hindi pa na-verify na lumang registration para sa email o username na ito
+    // 1. Linisin muna ang unverified accounts na may parehong email o username
     await User.deleteMany({
       $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
       isVerified: { $ne: true }
     });
 
-    // 2. Suriin kung mayroon nang aktibo at verified na account
+    // 2. Suriin kung mayroon nang verified account
     const existingUser = await User.findOne({
       $or: [{ email: normalizedEmail }, { username: normalizedUsername }]
     });
 
     if (existingUser && existingUser.isVerified) {
-      const isEmailTaken = existingUser.email === normalizedEmail;
       return res.status(400).json({
-        message: isEmailTaken
+        message: existingUser.email === normalizedEmail
           ? 'Ang email na ito ay nakarehistro na. Mangyaring mag-sign in na lamang.'
           : 'Ang username na ito ay gamit na. Pumili ng ibang username.'
       });
     }
 
-    // 3. I-hash ang password at buuin ang 6-digit OTP
+    // 3. I-hash ang password at buuin ang OTP
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const generatedCode = generateOTP();
 
-    // I-save ang bagong OTP sa database
     await Otp.deleteMany({ email: normalizedEmail });
     await Otp.create({
       email: normalizedEmail,
@@ -85,7 +64,6 @@ router.post('/register', async (req, res) => {
       createdAt: new Date()
     });
 
-    // 4. I-save ang user bilang unverified muna
     const newUser = new User({
       username: normalizedUsername,
       firstName: firstName.trim(),
@@ -101,60 +79,47 @@ router.post('/register', async (req, res) => {
     });
 
     await newUser.save();
-    await recordAudit('Account Registration Initiated', normalizedUsername, role || 'Warehouse', `OTP code dispatched to ${normalizedEmail}`);
+    recordAudit('Account Registration Initiated', normalizedUsername, role || 'Warehouse', `OTP generated for ${normalizedEmail}`);
 
-    // I-log sa Render Terminal para kahit ma-delay ang Gmail sa defense, mababasa mo agad ang OTP!
-    console.log('====================================================');
-    console.log(`🔑 [REGISTER OTP LOG] Para kay: ${normalizedEmail}`);
-    console.log(`👉 CODE: ${generatedCode}`);
-    console.log('====================================================');
+    console.log(`[AUTH] Generated OTP for ${normalizedEmail}: ${generatedCode}`);
 
-    // 5. Ipadala ang email sa background na may 5 segundong limit para hindi mag-hang ang frontend
-    const sendMailPromise = async () => {
-      const transporter = createTransporter();
-      await transporter.sendMail({
-        from: `"Supply Chain Logistics" <${process.env.EMAIL_USER}>`,
-        to: normalizedEmail,
-        subject: 'Account Registration Verification Passcode',
-        html: `
-          <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e293b;">
-            <h2 style="color: #10b981;">Supply Chain Logistics Verification</h2>
-            <p>Gamitin ang 6-digit verification code na ito upang makumpleto ang iyong pagpaparehistro:</p>
-            <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #0f172a; padding: 15px 0;">
-              ${generatedCode}
-            </div>
-            <p style="font-size: 13px; color: #64748b;">Mag-eexpire ang code na ito sa loob ng ilang minuto.</p>
-          </div>
-        `
-      });
-    };
-
+    // Fire-and-forget: Huwag i-await para hindi mag-hang kapag bina-block ng cloud firewall ang SMTP
     try {
-      // Maghintay nang hanggang 5 segundo lamang para sa Gmail. Kung lumampas, huwag i-hang ang user!
-      await Promise.race([
-        sendMailPromise(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP response timeout')), 5000))
-      ]);
-      console.log(`✓ Email matagumpay na naipadala sa ${normalizedEmail}`);
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USER.trim(),
+            pass: process.env.EMAIL_PASS.replace(/\s+/g, '').trim()
+          }
+        });
+
+        transporter.sendMail({
+          from: `"Supply Chain Logistics" <${process.env.EMAIL_USER}>`,
+          to: normalizedEmail,
+          subject: 'Account Registration Verification Passcode',
+          html: `<h2>Verification Code</h2><p>Your OTP code is: <strong>${generatedCode}</strong></p>`
+        }).catch((err) => {
+          console.warn('[Mail Notice]: Cloud SMTP blocked or unreachable:', err.message);
+        });
+      }
     } catch (e) {
-      console.warn(`[SMTP Warning]: Hindi agad nakasagot ang Gmail (${e.message}). Ang OTP ay nasa Render logs.`);
+      console.warn('[Transporter Notice]:', e.message);
     }
 
-    // Agad na sumagot sa browser upang lumipat sa /verify-otp screen
+    // Agad na sumagot sa browser nang walang hintayan (<100ms) kasama ang OTP code
     return res.status(201).json({
-      message: 'Registration initiated. Verification OTP sent.',
-      email: normalizedEmail
+      message: 'Registration successful! Verification code generated.',
+      email: normalizedEmail,
+      otp: generatedCode
     });
   } catch (error) {
     console.error('Registration processing error:', error);
-
-    // Saluhin ang duplicate key kung may sumabay na request
     if (error.code === 11000) {
       return res.status(400).json({
-        message: 'Mayroon nang account na gumagamit ng email o username na ito. Subukang mag-sign in.'
+        message: 'Mayroon nang account na gumagamit ng email o username na ito.'
       });
     }
-
     return res.status(500).json({ message: error.message || 'Registration error.' });
   }
 });
@@ -166,12 +131,12 @@ const handleOtpVerification = async (req, res) => {
     const inputOtp = (req.body.otp || req.body.code || '').toString().trim();
 
     if (!email || !inputOtp) {
-      return res.status(400).json({ message: 'Kinakailangan ang Email at OTP code.' });
+      return res.status(400).json({ message: 'Email and OTP code are required.' });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Hanapin ang OTP sa database O payagan ang Master Defense Code na "888888" para ligtas sa presentation
+    // Tanggapin ang tamang OTP mula sa DB o ang master defense backup passcode na "888888"
     const isMasterBypass = inputOtp === '888888';
     const otpRecord = await Otp.findOne({
       email: normalizedEmail,
@@ -179,16 +144,15 @@ const handleOtpVerification = async (req, res) => {
     });
 
     if (!otpRecord && !isMasterBypass) {
-      await recordAudit('OTP Verification Failed', normalizedEmail, 'Guest', 'Invalid passcode attempt', 'Warning');
-      return res.status(400).json({ message: 'Mali o expired na ang OTP verification code.' });
+      recordAudit('OTP Verification Failed', normalizedEmail, 'Guest', 'Invalid passcode attempt', 'Warning');
+      return res.status(400).json({ message: 'Mali o expired na ang verification code.' });
     }
 
-    // I-activate ang user account
     const user = await User.findOneAndUpdate({ email: normalizedEmail }, { isVerified: true }, { new: true });
     await Otp.deleteMany({ email: normalizedEmail });
 
     if (!user) {
-      return res.status(404).json({ message: 'Hindi natagpuan ang account para sa email na ito.' });
+      return res.status(404).json({ message: 'User account not found.' });
     }
 
     const token = jwt.sign(
@@ -197,7 +161,7 @@ const handleOtpVerification = async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    await recordAudit('OTP Verification Success', user.username, user.role, 'User account verified and activated');
+    recordAudit('OTP Verification Success', user.username, user.role, 'User account verified and activated');
 
     return res.status(200).json({
       message: 'Account verified successfully.',
@@ -226,13 +190,13 @@ router.post('/login', async (req, res) => {
     });
 
     if (!user) {
-      await recordAudit('Login Failed', username, 'Unknown', 'Account not found', 'Warning');
+      recordAudit('Login Failed', username, 'Unknown', 'Account not found', 'Warning');
       return res.status(404).json({ message: 'Hindi natagpuan ang account.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      await recordAudit('Login Failed', user.username, user.role, 'Incorrect password attempt', 'Warning');
+      recordAudit('Login Failed', user.username, user.role, 'Incorrect password attempt', 'Warning');
       return res.status(400).json({ message: 'Maling username o password.' });
     }
 
@@ -242,7 +206,7 @@ router.post('/login', async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    await recordAudit('User Authentication Successful', user.username, user.role, 'Session token granted');
+    recordAudit('User Authentication Successful', user.username, user.role, 'Session token granted');
 
     return res.status(200).json({
       message: 'Login successful.',
@@ -271,7 +235,7 @@ router.put('/users/:id/role', async (req, res) => {
     const updated = await User.findByIdAndUpdate(req.params.id, { role }, { new: true, select: '-password' });
     if (!updated) return res.status(404).json({ message: 'User not found.' });
 
-    await recordAudit('User Role Modified', 'System Admin', 'Admin', `Updated ${updated.username} role to ${role}`);
+    recordAudit('User Role Modified', 'System Admin', 'Admin', `Updated ${updated.username} role to ${role}`);
     return res.status(200).json(updated);
   } catch (error) {
     return res.status(500).json({ message: 'Failed to update user role.' });
@@ -284,7 +248,7 @@ router.delete('/users/:id', async (req, res) => {
     const deleted = await User.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ message: 'User not found.' });
 
-    await recordAudit('User Account Deleted', 'System Admin', 'Admin', `Deleted account of ${deleted.username}`, 'Warning');
+    recordAudit('User Account Deleted', 'System Admin', 'Admin', `Deleted account of ${deleted.username}`, 'Warning');
     return res.status(200).json({ message: 'User deleted successfully.' });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to delete user.' });

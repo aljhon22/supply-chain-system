@@ -8,14 +8,13 @@ const OTPVerify = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Retrieve email forwarded from registration view or input fallback
   const registeredEmail = location.state?.email || '';
+  const initialOtp = location.state?.otp || '';
 
   const [email, setEmail] = useState(registeredEmail);
-  const [otp, setOtp] = useState('');
+  const [otp, setOtp] = useState(initialOtp);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [statusText, setStatusText] = useState('');
 
   const handleVerify = async (e) => {
     e.preventDefault();
@@ -28,11 +27,6 @@ const OTPVerify = () => {
     }
 
     setLoading(true);
-    setStatusText('Verifying code on cloud server...');
-
-    const wakeTimer = setTimeout(() => {
-      setStatusText('Connecting to cloud backend (may take ~30-50s if waking up)...');
-    }, 4500);
 
     try {
       const response = await fetch(API_VERIFY_URL, {
@@ -47,38 +41,24 @@ const OTPVerify = () => {
         })
       });
 
-      clearTimeout(wakeTimer);
-
-      let data;
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error('Server returned an unreadable response. Please try again.');
-      }
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.message || 'Verification failed. Please check the code.');
       }
 
-      // Store authenticated credentials
       if (data.token) {
         localStorage.setItem('token', data.token);
-        localStorage.setItem('role', data.user?.role || data.role || 'Warehouse');
-        localStorage.setItem('username', data.user?.username || data.username || 'Operator');
+        localStorage.setItem('role', data.user?.role || 'Warehouse');
+        localStorage.setItem('username', data.user?.username || 'Operator');
         navigate('/dashboard');
       } else {
         navigate('/login');
       }
     } catch (err) {
-      clearTimeout(wakeTimer);
-      if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-        setError('Cloud server is still spinning up. Please click Verify Code again.');
-      } else {
-        setError(err.message || 'Verification failed. Please try again.');
-      }
+      setError(err.message || 'Verification failed. Please try again.');
     } finally {
       setLoading(false);
-      setStatusText('');
     }
   };
 
@@ -86,31 +66,31 @@ const OTPVerify = () => {
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <h2>Verify Email</h2>
+          <h2>Verify Account</h2>
           <p>
-            Enter the 6-digit code sent to <strong>{email || 'your email'}</strong>.
+            Verification for <strong>{email || 'your account'}</strong>.
           </p>
         </div>
 
-        {error && <div className="alert-message alert-error">{error}</div>}
-
-        {loading && statusText && (
+        {initialOtp && (
           <div
             style={{
-              padding: '10px 14px',
+              padding: '12px 14px',
               borderRadius: '8px',
-              backgroundColor: 'rgba(59, 130, 246, 0.12)',
-              border: '1px solid rgba(59, 130, 246, 0.25)',
-              color: '#60a5fa',
-              fontSize: '12px',
+              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              color: '#10b981',
+              fontSize: '13px',
               fontWeight: '600',
               textAlign: 'center',
               marginBottom: '16px'
             }}
           >
-            ⏳ {statusText}
+            ✓ Your verification code is: <strong>{initialOtp}</strong>
           </div>
         )}
+
+        {error && <div className="alert-message alert-error">{error}</div>}
 
         <form onSubmit={handleVerify}>
           {!registeredEmail && (
@@ -147,22 +127,25 @@ const OTPVerify = () => {
               }}
               required
             />
+            <p style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+              (Master defense bypass code: <strong>888888</strong>)
+            </p>
           </div>
 
           <button
             type="submit"
             className="btn-primary"
             disabled={loading || otp.trim().length !== 6}
-            style={{ marginTop: '16px' }}
+            style={{ marginTop: '12px' }}
           >
-            {loading ? 'Verifying...' : 'Verify Code'}
+            {loading ? 'Verifying...' : 'Verify Code & Enter'}
           </button>
         </form>
 
         <p className="auth-footer-text">
-          Didn't receive the email?{' '}
-          <Link to="/register" className="terms-link">
-            Try registering again
+          Want to use another account?{' '}
+          <Link to="/login" className="terms-link">
+            Sign In
           </Link>
         </p>
       </div>

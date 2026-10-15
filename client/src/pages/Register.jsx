@@ -26,12 +26,10 @@ const Register = () => {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [statusText, setStatusText] = useState('');
 
-  // Pre-warm backend sa background habang nagpi-fill up pa lang ang user
   useEffect(() => {
     fetch(API_HEALTH_URL, { method: 'GET' })
-      .then(() => console.log('Backend pre-warmed for registration.'))
+      .then(() => console.log('Backend is awake and ready.'))
       .catch(() => {});
   }, []);
 
@@ -62,11 +60,6 @@ const Register = () => {
     }
 
     setLoading(true);
-    setStatusText('Creating account on cloud server...');
-
-    const wakeTimer = setTimeout(() => {
-      setStatusText('Connecting to cloud backend (may take ~30-50s if waking up)...');
-    }, 4500);
 
     try {
       const response = await fetch(API_REGISTER_URL, {
@@ -88,31 +81,23 @@ const Register = () => {
         })
       });
 
-      clearTimeout(wakeTimer);
-
-      let data;
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error('Server returned an unreadable response. Please try again.');
-      }
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.message || 'Registration failed.');
       }
 
-      // Diretso sa OTP verification matapos maipadala ang verification email
-      navigate('/verify-otp', { state: { email: formData.email.trim() } });
+      // I-forward ang email at ang nabuong OTP papuntang /verify-otp
+      navigate('/verify-otp', {
+        state: {
+          email: formData.email.trim(),
+          otp: data.otp || ''
+        }
+      });
     } catch (err) {
-      clearTimeout(wakeTimer);
-      if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-        setError('Cloud server is still spinning up. Please click Register again.');
-      } else {
-        setError(err.message || 'Server communication error.');
-      }
+      setError(err.message || 'Server communication error.');
     } finally {
       setLoading(false);
-      setStatusText('');
     }
   };
 
@@ -126,27 +111,8 @@ const Register = () => {
 
         {error && <div className="alert-message alert-error">{error}</div>}
 
-        {loading && statusText && (
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: '8px',
-              backgroundColor: 'rgba(59, 130, 246, 0.12)',
-              border: '1px solid rgba(59, 130, 246, 0.25)',
-              color: '#60a5fa',
-              fontSize: '12px',
-              fontWeight: '600',
-              textAlign: 'center',
-              marginBottom: '16px'
-            }}
-          >
-            ⏳ {statusText}
-          </div>
-        )}
-
         <form onSubmit={handleRegister}>
           <div className="form-grid">
-            {/* Account Credentials */}
             <div className="form-group">
               <label>Username</label>
               <input
@@ -173,7 +139,6 @@ const Register = () => {
               />
             </div>
 
-            {/* Personal Details */}
             <div className="form-group">
               <label>First Name</label>
               <input
@@ -264,7 +229,6 @@ const Register = () => {
               />
             </div>
 
-            {/* Password Credentials */}
             <div className="form-group">
               <label>Password</label>
               <input
@@ -292,7 +256,6 @@ const Register = () => {
             </div>
           </div>
 
-          {/* Terms & Conditions Agreement */}
           <label className="terms-agreement">
             <input
               type="checkbox"
