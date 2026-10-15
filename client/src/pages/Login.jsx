@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../Auth.css';
 
 const API_LOGIN_URL = 'https://supply-chain-system-pbir.onrender.com/api/auth/login';
+const API_HEALTH_URL = 'https://supply-chain-system-pbir.onrender.com/api/health';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -13,6 +14,13 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
+
+  // Pre-warm backend sa background pagkabukas pa lang ng page
+  useEffect(() => {
+    fetch(API_HEALTH_URL, { method: 'GET' })
+      .then(() => console.log('Backend is awake and ready.'))
+      .catch(() => {});
+  }, []);
 
   const handleChange = (e) => {
     setFormData({
@@ -25,12 +33,11 @@ const Login = () => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    setStatusText('Connecting to cloud server...');
+    setStatusText('Authenticating...');
 
-    // Timer para magpaalala kapag gising pa lang ang libreng Render server
     const wakeTimer = setTimeout(() => {
-      setStatusText('Waking up free cloud backend (may take ~30-50s)...');
-    }, 4500);
+      setStatusText('Connecting to cloud server...');
+    }, 3000);
 
     try {
       const response = await fetch(API_LOGIN_URL, {
@@ -47,19 +54,17 @@ const Login = () => {
       try {
         data = await response.json();
       } catch {
-        throw new Error('Server returned an unreadable response. Please retry in a few seconds.');
+        throw new Error('Server returned an unreadable response. Please retry.');
       }
 
       if (!response.ok) {
         throw new Error(data.message || 'Invalid username or password.');
       }
 
-      // Kuhanin ang token at role
       const resolvedToken = data.token || `auth-token-${Date.now()}`;
       const resolvedRole = data.user?.role || data.role || 'Admin';
       const resolvedUsername = data.user?.username || data.username || formData.username;
 
-      // I-save sa session
       localStorage.setItem('token', resolvedToken);
       localStorage.setItem('role', resolvedRole);
       localStorage.setItem('username', resolvedUsername);
@@ -67,10 +72,8 @@ const Login = () => {
       navigate('/dashboard');
     } catch (err) {
       clearTimeout(wakeTimer);
-
-      // Maayos na mensahe kung sakaling tulog pa o offline
       if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-        setError('Server is still waking up from idle mode. Please click "Sign In" again.');
+        setError('Server is warming up. Please click "Sign In" again.');
       } else {
         setError(err.message || 'Login attempt failed.');
       }
